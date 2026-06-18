@@ -1,0 +1,274 @@
+{% extends "base_auth.html" %}
+
+{% block title %}Modifier reservation | LavageAuto{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/client.css') }}">
+{% endblock %}
+
+{% block content %}
+    <section class="client-dashboard-section">
+        <div class="container">
+            <div v-if="pageError" class="auth-message auth-message-error">
+                ${ pageError }
+            </div>
+
+            <div v-else class="profile-shell">
+                <div class="dashboard-hero">
+                    <div>
+                        <span class="section-kicker">Reservation</span>
+                        <h1 class="dashboard-title">Modifier la reservation #${ reservationId }</h1>
+                        <p class="dashboard-subtitle">
+                            Changez la date et l'heure de debut de votre reservation.
+                        </p>
+                    </div>
+
+                    <div class="dashboard-actions">
+                        <a href="{{ url_for('client_front.client_dashboard_page') }}" class="btn btn-secondary">
+                            Retour au tableau de bord
+                        </a>
+                    </div>
+                </div>
+
+                <section class="dashboard-section-card">
+                    <div v-if="loading" class="section-description">
+                        Chargement de la reservation...
+                    </div>
+
+                    <form v-else class="auth-form" @submit.prevent="submitUpdate">
+                        <div class="auth-grid">
+                            <div class="form-group">
+                                <label for="date">Date</label>
+                                <input
+                                    id="date"
+                                    v-model="form.date"
+                                    type="date"
+                                    class="auth-input"
+                                    required
+                                />
+                            </div>
+
+                            <div class="form-group">
+                                <label for="heure_debut">Heure de debut</label>
+                                <input
+                                    id="heure_debut"
+                                    v-model="form.heure_debut"
+                                    type="time"
+                                    class="auth-input"
+                                    required
+                                />
+                            </div>
+                        </div>
+
+                        <div class="reservation-summary-card">
+                            <h3>Resume actuel</h3>
+                            <p><strong>Prestataire :</strong> ${ prestataireLabel }</p>
+                            <p><strong>Statut :</strong> ${ reservationStatut || 'N/A' }</p>
+                            <p><strong>Services :</strong> ${ servicesLabel }</p>
+                        </div>
+
+                        <div v-if="errorMessage" class="auth-message auth-message-error">
+                            ${ errorMessage }
+                        </div>
+
+                        <div v-if="successMessage" class="auth-message auth-message-success">
+                            ${ successMessage }
+                        </div>
+
+                        <button type="submit" class="btn btn-primary auth-submit" :disabled="saving || !canSubmit">
+                            <span v-if="saving">Mise a jour...</span>
+                            <span v-else>Enregistrer</span>
+                        </button>
+                    </form>
+                </section>
+            </div>
+        </div>
+    </section>
+{% endblock %}
+
+{% block vue_app %}
+    <script>
+        const EditReservationApp = {
+            delimiters: ['${', '}'],
+            mixins: [BasePublicApp],
+            data() {
+                return {
+                    reservationId: Number("{{ reservation_id }}"),
+                    pageError: "",
+                    errorMessage: "",
+                    successMessage: "",
+                    loading: false,
+                    saving: false,
+                    reservationStatut: "",
+                    prestataireLabel: "",
+                    servicesLabel: "",
+                    form: {
+                        date: "",
+                        heure_debut: ""
+                    }
+                };
+            },
+            computed: {
+                canSubmit() {
+                    return Boolean(this.form.date && this.form.heure_debut);
+                }
+            },
+            methods: {
+                getAccessToken() {
+                    return localStorage.getItem("access_token") || "";
+                },
+
+                getUserRole() {
+                    return localStorage.getItem("user_role") || "";
+                },
+
+                redirectToLogin(message) {
+                    this.pageError = message;
+                    setTimeout(() => {
+                        window.location.href = "{{ url_for('public.login_page') }}";
+                    }, 1300);
+                },
+
+                async safeReadJson(response) {
+                    const contentType = response.headers.get("content-type") || "";
+                    if (!contentType.includes("application/json")) {
+                        return null;
+                    }
+                    try {
+                        return await response.json();
+                    } catch {
+                        return null;
+                    }
+                },
+
+                getErrorMessage(payload, fallbackMessage) {
+                    if (payload && typeof payload.message === "string" && payload.message.trim()) {
+                        return payload.message;
+                    }
+                    if (payload && typeof payload.error === "string" && payload.error.trim()) {
+                        return payload.error;
+                    }
+                    return fallbackMessage;
+                },
+
+                formatDateForInput(value) {
+                    if (!value) return "";
+                    if (typeof value === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(value)) {
+                        return value;
+                    }
+                    const parsed = new Date(value);
+                    if (Number.isNaN(parsed.getTime())) {
+                        return "";
+                    }
+                    return parsed.toISOString().split("T")[0];
+                },
+
+                formatTimeForInput(value) {
+                    if (!value || typeof value !== "string") {
+                        return "";
+                    }
+                    return value.slice(0, 5);
+                },
+
+                async fetchReservation() {
+                    this.loading = true;
+                    this.errorMessage = "";
+
+                    try {
+                        const response = await fetch(`/clients/me/reservations/${this.reservationId}`, {
+                            headers: {
+                                "Accept": "application/json",
+                                "Authorization": `Bearer ${this.getAccessToken()}`
+                            }
+                        });
+
+                        const payload = await this.safeReadJson(response);
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(this.getErrorMessage(payload, "Impossible de charger la reservation."));
+                        }
+
+                        const detail = payload.data || {};
+                        const reservation = detail.reservation || {};
+                        const services = Array.isArray(detail.services) ? detail.services : [];
+
+                        this.form.date = this.formatDateForInput(reservation.date);
+                        this.form.heure_debut = this.formatTimeForInput(reservation.heure_debut);
+                        this.reservationStatut = reservation.statut || "";
+
+                        const prenoms = reservation.prestataire_prenoms || "";
+                        const nom = reservation.prestataire_nom || "";
+                        this.prestataireLabel = `${prenoms} ${nom}`.trim() || "N/A";
+
+                        this.servicesLabel = services.map((service) => service.nom).filter(Boolean).join(", ") || "Aucun";
+                    } catch (error) {
+                        this.pageError = error.message || "Erreur au chargement de la reservation.";
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async submitUpdate() {
+                    this.errorMessage = "";
+                    this.successMessage = "";
+
+                    if (!this.canSubmit) {
+                        this.errorMessage = "Veuillez remplir la date et l'heure.";
+                        return;
+                    }
+
+                    this.saving = true;
+                    try {
+                        const payloadToSend = {
+                            date: this.form.date,
+                            heure_debut: `${this.form.heure_debut}:00`
+                        };
+
+                        const response = await fetch(`/reservations/${this.reservationId}`, {
+                            method: "PUT",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Accept": "application/json",
+                                "Authorization": `Bearer ${this.getAccessToken()}`
+                            },
+                            body: JSON.stringify(payloadToSend)
+                        });
+
+                        const payload = await this.safeReadJson(response);
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(this.getErrorMessage(payload, "Impossible de modifier la reservation."));
+                        }
+
+                        this.successMessage = "Reservation modifiee avec succes.";
+                    } catch (error) {
+                        this.errorMessage = error.message || "Erreur lors de la mise a jour.";
+                    } finally {
+                        this.saving = false;
+                    }
+                }
+            },
+            mounted() {
+                if (!Number.isInteger(this.reservationId) || this.reservationId <= 0) {
+                    this.pageError = "Identifiant de reservation invalide.";
+                    return;
+                }
+
+                const accessToken = this.getAccessToken();
+                const role = this.getUserRole();
+
+                if (!accessToken) {
+                    this.redirectToLogin("Vous devez etre connecte pour modifier une reservation.");
+                    return;
+                }
+
+                if (role !== "client") {
+                    this.redirectToLogin("Cette page est reservee aux clients.");
+                    return;
+                }
+
+                this.fetchReservation();
+            }
+        };
+
+        Vue.createApp(EditReservationApp).mount("#app");
+    </script>
+{% endblock %}

@@ -1,0 +1,4 @@
+-- Migration historique.
+-- En PostgreSQL, les tables de fondation sont creees directement avec leurs noms francais:
+-- Evenements_Outbox, Cles_Idempotence et Journaux_Audit.
+-- Ce fichier est conserve comme jalon de migration, sans operation a appliquer.

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>{% block title %}LavageAuto{% endblock %}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet"
+    >
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/public.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+<div id="app" class="site-shell" v-cloak>
+    <header class="auth-header-minimal">
+        <div class="container auth-header-inner">
+            <a href="{{ url_for('public.home') }}" class="brand">
+                <span class="brand-mark">L</span>
+                <span class="brand-text">LavageAuto</span>
+            </a>
+
+            <div class="auth-header-actions">
+                <a href="{{ url_for('public.home') }}" class="auth-header-link">Accueil</a>
+                <a href="{{ url_for('public.services_page') }}" class="auth-header-link">Services</a>
+                <a href="{{ url_for('public.team_page') }}" class="auth-header-link">Notre équipe</a>
+
+                <template v-if="isAuthenticated && userRole === 'client'">
+                    <a href="{{ url_for('client_front.client_dashboard_page') }}" class="auth-header-link">
+                        Tableau de bord
+                    </a>
+                    <a href="{{ url_for('client_front.client_profile_page') }}" class="auth-header-link">
+                        Profil
+                    </a>
+                    <span class="nav-user-name">${ displayUserName }</span>
+                    <button type="button" class="btn btn-secondary" @click="logout">
+                        Déconnexion
+                    </button>
+                </template>
+
+                <template v-else-if="isAuthenticated && userRole === 'prestataire'">
+                    <a href="{{ url_for('prestataire_front.prestataire_dashboard_page') }}" class="auth-header-link">
+                        Tableau de bord
+                    </a>
+                    <a href="{{ url_for('prestataire_front.prestataire_profile_page') }}" class="auth-header-link">
+                        Profil
+                    </a>
+                    <span class="nav-user-name">${ displayUserName }</span>
+                    <button type="button" class="btn btn-secondary" @click="logout">
+                        Déconnexion
+                    </button>
+                </template>
+
+                <template v-else>
+                    <a href="{{ url_for('public.login_page') }}" class="btn btn-secondary">
+                        Connexion
+                    </a>
+                </template>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+{% block extra_js %}{% endblock %}
+
+<script>
+    const BasePublicApp = {
+        delimiters: ['${', '}'],
+        data() {
+            return {
+                mobileMenuOpen: false,
+                isAuthenticated: false,
+                userRole: "",
+                userProfile: null
+            };
+        },
+        computed: {
+            displayUserName() {
+                if (!this.userProfile) {
+                    return "";
+                }
+
+                const prenoms = this.userProfile.prenoms || "";
+                const nom = this.userProfile.nom || "";
+                return `${prenoms} ${nom}`.trim();
+            }
+        },
+        methods: {
+            toggleMobileMenu() {
+                this.mobileMenuOpen = !this.mobileMenuOpen;
+            },
+
+            hydrateAuthState() {
+                const token = localStorage.getItem("access_token") || "";
+                const role = localStorage.getItem("user_role") || "";
+                const userProfileRaw = localStorage.getItem("user_profile");
+
+                this.isAuthenticated = Boolean(token);
+                this.userRole = role;
+
+                try {
+                    this.userProfile = userProfileRaw ? JSON.parse(userProfileRaw) : null;
+                } catch {
+                    this.userProfile = null;
+                }
+            },
+
+            logout() {
+                localStorage.removeItem("access_token");
+                localStorage.removeItem("user_role");
+                localStorage.removeItem("user_profile");
+                window.location.href = "{{ url_for('public.home') }}";
+            }
+        },
+        mounted() {
+            this.hydrateAuthState();
+        }
+    };
+</script>
+
+{% block vue_app %}{% endblock %}
+</body>
+</html>

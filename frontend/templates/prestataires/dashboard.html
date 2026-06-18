@@ -1,0 +1,1134 @@
+{% extends "base_auth.html" %}
+
+{% block title %}Dashboard prestataire{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/client.css') }}">
+{% endblock %}
+
+{% block content %}
+    <div class="dashboard-page dashboard-prestataire">
+        <section class="prestataire-dashboard-hero">
+            <div>
+                <p class="eyebrow">Espace prestataire</p>
+                <h1>Bonjour ${ displayName }</h1>
+                <p class="hero-subtitle">
+                    Gérez vos réservations, vos services, vos disponibilités et vos informations rapidement.
+                </p>
+            </div>
+        </section>
+
+        <section v-if="globalError" class="alert alert-error">
+            ${ globalError }
+        </section>
+
+        <section v-if="globalMessage" class="auth-message auth-message-success">
+            ${ globalMessage }
+        </section>
+
+        <section class="prestataire-stats-grid" v-if="!isLoading">
+            <article class="prestataire-stat-card">
+                <span class="prestataire-stat-label">Services</span>
+                <strong class="prestataire-stat-value">${ services.length }</strong>
+            </article>
+
+            <article class="prestataire-stat-card">
+                <span class="prestataire-stat-label">Disponibilités</span>
+                <strong class="prestataire-stat-value">${ disponibilites.length }</strong>
+            </article>
+
+            <article class="prestataire-stat-card">
+                <span class="prestataire-stat-label">Réservations à venir</span>
+                <strong class="prestataire-stat-value">${ upcomingReservations.length }</strong>
+            </article>
+
+            <article class="prestataire-stat-card">
+                <span class="prestataire-stat-label">Note moyenne</span>
+                <strong class="prestataire-stat-value">${ stats.noteMoyenne }</strong>
+            </article>
+        </section>
+
+        <section v-if="isLoading" class="dashboard-loading">
+            Chargement du tableau de bord...
+        </section>
+
+        <section v-else class="prestataire-dashboard-grid">
+            <div class="prestataire-dashboard-column">
+                <article class="prestataire-panel-card">
+                    <div class="prestataire-panel-header">
+                        <h2>Réservations à venir</h2>
+                        <span class="prestataire-panel-badge">${ upcomingReservations.length }</span>
+                    </div>
+
+                    <div v-if="upcomingReservations.length === 0" class="empty-state">
+                        Aucune réservation à venir.
+                    </div>
+
+                    <div v-else class="reservation-list">
+                        <article
+                                v-for="reservation in upcomingReservations"
+                                :key="reservation.id"
+                                class="reservation-card"
+                        >
+                            <div class="reservation-top">
+                                <div>
+                                    <h3>Réservation #${ reservation.id }</h3>
+                                    <p>
+                                        ${ formatDate(reservation.date) } ·
+                                        ${ formatTime(reservation.heure_debut) }
+                                        <span v-if="reservation.heure_fin">
+                                        - ${ formatTime(reservation.heure_fin) }
+                                    </span>
+                                    </p>
+                                </div>
+
+                                <span class="status-pill" :class="statusClass(reservation.statut)">
+                                ${ reservation.statut }
+                            </span>
+                            </div>
+
+                            <p class="reservation-client" v-if="reservation.client_nom || reservation.client_prenoms">
+                                Client : ${ formatClientName(reservation.client_prenoms, reservation.client_nom) }
+                            </p>
+
+                            <p class="reservation-services" v-if="reservation.services_resume">
+                                Services : ${ reservation.services_resume }
+                            </p>
+
+                            <div class="reservation-comment-box" v-if="commentairesByReservation[reservation.id]">
+                                <p v-if="commentairesByReservation[reservation.id].client_nom || commentairesByReservation[reservation.id].client_prenoms">
+                                    <strong>Client :</strong>
+                                    ${ formatClientName(
+                                    commentairesByReservation[reservation.id].client_prenoms,
+                                    commentairesByReservation[reservation.id].client_nom
+                                    ) }
+                                </p>
+                                <p>
+                                    <strong>Commentaire :</strong>
+                                    ${ commentairesByReservation[reservation.id].texte || "Sans texte" }
+                                </p>
+                                <p>
+                                    <strong>Note :</strong>
+                                    ${ commentairesByReservation[reservation.id].note ?? "N/A" } / 5
+                                </p>
+                            </div>
+
+                            <div class="reservation-actions">
+                                <button
+                                        type="button"
+                                        class="btn btn-secondary"
+                                        @click="changeReservationStatus(reservation.id, 'En cours')"
+                                        :disabled="reservationActionLoadingId === reservation.id || reservation.statut === 'En cours'"
+                                >
+                                    Mettre en cours
+                                </button>
+
+                                <button
+                                        type="button"
+                                        class="btn btn-primary"
+                                        @click="changeReservationStatus(reservation.id, 'Terminee')"
+                                        :disabled="reservationActionLoadingId === reservation.id || reservation.statut === 'Terminee'"
+                                >
+                                    Marquer terminée
+                                </button>
+                            </div>
+                        </article>
+                    </div>
+                </article>
+
+                <article class="prestataire-panel-card">
+                    <div class="prestataire-panel-header">
+                        <h2>Réservations passées</h2>
+                        <span class="prestataire-panel-badge">${ pastReservations.length }</span>
+                    </div>
+
+                    <div v-if="pastReservations.length === 0" class="empty-state">
+                        Aucune réservation passée.
+                    </div>
+
+                    <div v-else class="reservation-list">
+                        <article
+                                v-for="reservation in pastReservations"
+                                :key="reservation.id"
+                                class="reservation-card"
+                        >
+                            <div class="reservation-top">
+                                <div>
+                                    <h3>Réservation #${ reservation.id }</h3>
+                                    <p>
+                                        ${ formatDate(reservation.date) } ·
+                                        ${ formatTime(reservation.heure_debut) }
+                                        <span v-if="reservation.heure_fin">
+                                        - ${ formatTime(reservation.heure_fin) }
+                                    </span>
+                                    </p>
+                                </div>
+
+                                <span class="status-pill" :class="statusClass(reservation.statut)">
+                                ${ reservation.statut }
+                            </span>
+                            </div>
+
+                            <p class="reservation-client" v-if="reservation.client_nom">
+                                Client : ${ reservation.client_prenoms } ${ reservation.client_nom}
+                            </p>
+
+                            <p class="reservation-services" v-if="reservation.services_resume">
+                                Services : ${ reservation.services_resume }
+                            </p>
+
+                            <div class="reservation-comment-box" v-if="commentairesByReservation[reservation.id]">
+                                <p v-if="commentairesByReservation[reservation.id].client_nom || commentairesByReservation[reservation.id].client_prenoms">
+                                    <strong>Client :</strong>
+                                    ${ formatClientName(
+                                    commentairesByReservation[reservation.id].client_prenoms,
+                                    commentairesByReservation[reservation.id].client_nom
+                                    ) }
+                                </p>
+                                <p>
+                                    <strong>Commentaire :</strong>
+                                    ${ commentairesByReservation[reservation.id].texte || "Sans texte" }
+                                </p>
+                                <p>
+                                    <strong>Note :</strong>
+                                    ${ commentairesByReservation[reservation.id].note ?? "N/A" } / 5
+                                </p>
+                            </div>
+                        </article>
+                    </div>
+                </article>
+            </div>
+
+            <div class="prestataire-dashboard-column">
+                <article class="prestataire-panel-card">
+                    <div class="prestataire-panel-header">
+                        <h2>Mes services</h2>
+                        <span class="prestataire-panel-badge">${ services.length }</span>
+                    </div>
+
+                    <form class="auth-form" @submit.prevent="submitServiceForm">
+                        <div class="auth-grid">
+                            <div class="form-group">
+                                <label for="service_nom">Nom du service</label>
+                                <input id="service_nom" v-model.trim="serviceForm.nom" type="text" class="auth-input"
+                                       required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="service_prix">Prix</label>
+                                <input id="service_prix" v-model="serviceForm.prix" type="number" step="0.01" min="0"
+                                       class="auth-input" required>
+                            </div>
+                        </div>
+
+                        <div class="auth-grid">
+                            <div class="form-group">
+                                <label for="service_duree">Durée (heures)</label>
+                                <input id="service_duree" v-model="serviceForm.duree" type="number" step="0.01" min="0"
+                                       class="auth-input" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="service_description">Description</label>
+                                <input id="service_description" v-model.trim="serviceForm.description" type="text"
+                                       class="auth-input" required>
+                            </div>
+                        </div>
+
+                        <div class="reservation-actions">
+                            <button type="submit" class="btn btn-primary" :disabled="serviceActionLoading">
+                                ${ serviceForm.id ? 'Mettre à jour le service' : 'Ajouter un service' }
+                            </button>
+
+                            <button
+                                    v-if="serviceForm.id"
+                                    type="button"
+                                    class="btn btn-secondary"
+                                    @click="resetServiceForm"
+                                    :disabled="serviceActionLoading"
+                            >
+                                Annuler l’édition
+                            </button>
+                        </div>
+                    </form>
+
+                    <div v-if="services.length === 0" class="empty-state">
+                        Aucun service enregistré.
+                    </div>
+
+                    <div v-else class="service-list">
+                        <article
+                                v-for="service in services"
+                                :key="service.id"
+                                class="service-card"
+                        >
+                            <div class="service-top">
+                                <h3>${ service.nom }</h3>
+                                <strong>${ formatPrice(service.prix) }</strong>
+                            </div>
+
+                            <p class="service-description">${ service.description }</p>
+                            <p class="service-meta">Durée : ${ formatDuree(service.duree) }</p>
+
+                            <div class="reservation-actions">
+                                <button
+                                        type="button"
+                                        class="btn btn-secondary"
+                                        @click="startEditService(service)"
+                                        :disabled="serviceActionLoading"
+                                >
+                                    Modifier
+                                </button>
+
+                                <button
+                                        type="button"
+                                        class="btn btn-danger"
+                                        @click="deleteService(service.id)"
+                                        :disabled="serviceActionLoading"
+                                >
+                                    Supprimer
+                                </button>
+                            </div>
+                        </article>
+                    </div>
+                </article>
+
+                <article class="prestataire-panel-card">
+                    <div class="prestataire-panel-header">
+                        <h2>Mes disponibilités</h2>
+                        <span class="prestataire-panel-badge">${ disponibilites.length }</span>
+                    </div>
+
+                    <form class="auth-form" @submit.prevent="submitDisponibiliteForm">
+                        <div class="auth-grid">
+                            <div class="form-group">
+                                <label for="dispo_jour">Jour</label>
+                                <select id="dispo_jour" v-model="disponibiliteForm.jour" class="auth-input" required>
+                                    <option value="">Sélectionnez</option>
+                                    <option>Lundi</option>
+                                    <option>Mardi</option>
+                                    <option>Mercredi</option>
+                                    <option>Jeudi</option>
+                                    <option>Vendredi</option>
+                                    <option>Samedi</option>
+                                    <option>Dimanche</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="dispo_statut">Statut</label>
+                                <select id="dispo_statut" v-model="disponibiliteForm.statut" class="auth-input"
+                                        required>
+                                    <option value="Disponible">Disponible</option>
+                                    <option value="Indisponible">Indisponible</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="auth-grid">
+                            <div class="form-group">
+                                <label for="dispo_heure_debut">Heure début</label>
+                                <input id="dispo_heure_debut" v-model="disponibiliteForm.heure_debut" type="time"
+                                       class="auth-input" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="dispo_heure_fin">Heure fin</label>
+                                <input id="dispo_heure_fin" v-model="disponibiliteForm.heure_fin" type="time"
+                                       class="auth-input" required>
+                            </div>
+                        </div>
+
+                        <div class="reservation-actions">
+                            <button type="submit" class="btn btn-primary" :disabled="disponibiliteActionLoading">
+                                ${ disponibiliteEditMode ? 'Mettre à jour la disponibilité' : 'Ajouter une disponibilité' }
+                            </button>
+                            <button
+                                    v-if="disponibiliteEditMode"
+                                    type="button"
+                                    class="btn btn-secondary"
+                                    @click="resetDisponibiliteForm"
+                                    :disabled="disponibiliteActionLoading"
+                            >
+                                Annuler l’édition
+                            </button>
+                        </div>
+                    </form>
+
+                    <div v-if="disponibilites.length === 0" class="empty-state">
+                        Aucune disponibilité enregistrée.
+                    </div>
+
+                    <div v-else class="disponibilite-list">
+                        <article
+                                v-for="dispo in disponibilites"
+                                :key="`${dispo.jour}-${dispo.heure_debut}-${dispo.heure_fin}`"
+                                class="disponibilite-card"
+                        >
+                            <div class="disponibilite-top">
+                                <h3>${ dispo.jour }</h3>
+                                <span class="status-pill status-dispo">${ dispo.statut }</span>
+                            </div>
+
+                            <p>${ formatTime(dispo.heure_debut) } - ${ formatTime(dispo.heure_fin) }</p>
+
+                            <div class="reservation-actions">
+                                <button
+                                        type="button"
+                                        class="btn btn-secondary"
+                                        @click="startEditDisponibilite(dispo)"
+                                        :disabled="disponibiliteActionLoading"
+                                >
+                                    Modifier
+                                </button>
+
+                                <button
+                                        type="button"
+                                        class="btn btn-danger"
+                                        @click="deleteDisponibilite(dispo)"
+                                        :disabled="disponibiliteActionLoading"
+                                >
+                                    Supprimer
+                                </button>
+                            </div>
+                        </article>
+                    </div>
+                </article>
+
+                <article class="prestataire-panel-card">
+                    <div class="prestataire-panel-header">
+                        <h2>Changer mon mot de passe</h2>
+                    </div>
+
+                    <form class="auth-form" @submit.prevent="submitChangePassword">
+                        <div class="form-group">
+                            <label for="ancien_mot_de_passe">Mot de passe actuel</label>
+                            <input id="ancien_mot_de_passe" v-model="passwordForm.ancien_mot_de_passe" type="password"
+                                   class="auth-input" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="nouveau_mot_de_passe">Nouveau mot de passe</label>
+                            <input id="nouveau_mot_de_passe" v-model="passwordForm.nouveau_mot_de_passe" type="password"
+                                   class="auth-input" minlength="15" maxlength="128" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="confirmation_mot_de_passe">Confirmation</label>
+                            <input id="confirmation_mot_de_passe" v-model="passwordForm.confirmation_mot_de_passe"
+                                   type="password" class="auth-input" minlength="15" maxlength="128" required>
+                        </div>
+
+                        <div class="reservation-actions">
+                            <button type="submit" class="btn btn-primary" :disabled="passwordActionLoading">
+                                Modifier le mot de passe
+                            </button>
+                        </div>
+                    </form>
+                </article>
+            </div>
+        </section>
+    </div>
+{% endblock %}
+
+{% block vue_app %}
+    <script>
+        const PrestataireDashboardApp = {
+            delimiters: ['${', '}'],
+            mixins: [BasePublicApp],
+
+            data() {
+                return {
+                    isLoading: true,
+                    globalError: "",
+                    globalMessage: "",
+
+                    services: [],
+                    disponibilites: [],
+                    upcomingReservations: [],
+                    pastReservations: [],
+                    commentairesByReservation: {},
+
+                    reservationActionLoadingId: null,
+                    serviceActionLoading: false,
+                    disponibiliteActionLoading: false,
+                    passwordActionLoading: false,
+
+                    serviceForm: {
+                        id: null,
+                        nom: "",
+                        description: "",
+                        prix: "",
+                        duree: ""
+                    },
+
+                    disponibiliteForm: {
+                        jour: "",
+                        heure_debut: "",
+                        heure_fin: "",
+                        statut: "Disponible"
+                    },
+
+                    disponibiliteEditMode: false,
+                    disponibiliteOriginalKey: {
+                        jour: "",
+                        heure_debut: "",
+                        heure_fin: ""
+                    },
+
+                    passwordForm: {
+                        ancien_mot_de_passe: "",
+                        nouveau_mot_de_passe: "",
+                        confirmation_mot_de_passe: ""
+                    }
+                };
+            },
+
+            computed: {
+                displayName() {
+                    if (this.userProfile?.prenoms || this.userProfile?.nom) {
+                        return `${this.userProfile?.prenoms || ""} ${this.userProfile?.nom || ""}`.trim();
+                    }
+                    return "prestataire";
+                },
+
+                stats() {
+                    return {
+                        noteMoyenne: this.formatNoteMoyenne(
+                            this.userProfile?.note_moyenne,
+                            this.userProfile?.nombre_notes
+                        )
+                    };
+                }
+            },
+            methods: {
+                handleUnauthorized(response) {
+                    if (response.status === 401) {
+                        localStorage.removeItem("access_token");
+                        localStorage.removeItem("user_role");
+                        localStorage.removeItem("user_profile");
+                        window.location.href = "/connexion";
+                        return true;
+                    }
+                    return false;
+                },
+                formatClientName(prenoms, nom) {
+                    return `${prenoms || ""} ${nom || ""}`.trim();
+                },
+                getAccessToken() {
+                    return localStorage.getItem("access_token") || "";
+                },
+
+                buildHeaders(isJson = true) {
+                    const headers = {
+                        "Accept": "application/json",
+                        "Authorization": `Bearer ${this.getAccessToken()}`
+                    };
+
+                    if (isJson) {
+                        headers["Content-Type"] = "application/json";
+                    }
+
+                    return headers;
+                },
+
+                async safeReadJson(response) {
+                    const contentType = response.headers.get("content-type") || "";
+
+                    if (!contentType.includes("application/json")) {
+                        return null;
+                    }
+
+                    try {
+                        return await response.json();
+                    } catch {
+                        return null;
+                    }
+                },
+
+                getErrorMessage(payload, fallbackMessage) {
+                    if (payload && typeof payload.message === "string" && payload.message.trim()) {
+                        return payload.message;
+                    }
+
+                    if (payload && typeof payload.error === "string" && payload.error.trim()) {
+                        return payload.error;
+                    }
+
+                    return fallbackMessage;
+                },
+
+                clearMessages() {
+                    this.globalError = "";
+                    this.globalMessage = "";
+                },
+
+                async fetchJson(url) {
+                    const response = await fetch(url, {
+                        headers: this.buildHeaders(false)
+                    });
+
+                    if (response.status === 401) {
+                        localStorage.removeItem("access_token");
+                        localStorage.removeItem("user_role");
+                        localStorage.removeItem("user_profile");
+                        window.location.href = "/connexion";
+                        return null;
+                    }
+
+                    const payload = await this.safeReadJson(response);
+
+                    if (!response.ok || !payload || payload.success !== true) {
+                        throw new Error(this.getErrorMessage(payload, "Une erreur est survenue."));
+                    }
+
+                    return payload.data;
+                },
+
+                formatDate(value) {
+                    if (!value) return "";
+                    const date = new Date(value);
+                    if (Number.isNaN(date.getTime())) return value;
+
+                    return new Intl.DateTimeFormat("fr-CA", {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric"
+                    }).format(date);
+                },
+
+                formatTime(value) {
+                    if (!value) return "";
+                    return String(value).slice(0, 5);
+                },
+
+                formatPrice(value) {
+                    const amount = Number(value || 0);
+                    return new Intl.NumberFormat("fr-CA", {
+                        style: "currency",
+                        currency: "CAD"
+                    }).format(amount);
+                },
+
+                formatDuree(value) {
+                    const amount = Number(value || 0);
+                    return `${amount} h`;
+                },
+
+                formatNoteMoyenne(value, nombreNotes) {
+                    if (!Number(nombreNotes || 0)) {
+                        return "Aucune note";
+                    }
+
+                    const note = Number(value || 0);
+                    return `${note.toFixed(2)} / 5`;
+                },
+
+                statusClass(status) {
+                    const normalized = String(status || "").toLowerCase();
+
+                    if (normalized.includes("term")) return "status-terminee";
+                    if (normalized.includes("cours")) return "status-encours";
+                    if (normalized.includes("annul")) return "status-annulee";
+                    return "status-assignee";
+                },
+
+                async fetchProfile() {
+                    const profile = await this.fetchJson("/prestataires/me");
+                    if (!profile) return;
+
+                    this.userProfile = profile;
+                    localStorage.setItem("user_profile", JSON.stringify(profile));
+                },
+
+                async fetchUpcomingReservations() {
+                    this.upcomingReservations = await this.fetchJson("/prestataires/me/reservations/upcoming");
+                },
+
+                async fetchPastReservations() {
+                    this.pastReservations = await this.fetchJson("/prestataires/me/reservations/past");
+                },
+
+                async fetchServices() {
+                    this.services = await this.fetchJson("/prestataires/me/services");
+                },
+
+                async fetchDisponibilites() {
+                    this.disponibilites = await this.fetchJson("/prestataires/me/disponibilites");
+                },
+
+                async fetchCommentaireForReservation(reservationId) {
+                    try {
+                        const commentaire = await this.fetchJson(`/prestataires/me/reservations/${reservationId}/commentaire`);
+                        this.commentairesByReservation[reservationId] = commentaire;
+                    } catch {
+                        this.commentairesByReservation[reservationId] = null;
+                    }
+                },
+
+                async fetchCommentairesForReservations() {
+                    const allReservations = [...this.upcomingReservations, ...this.pastReservations];
+                    const tasks = allReservations.map(reservation =>
+                        this.fetchCommentaireForReservation(reservation.id)
+                    );
+                    await Promise.all(tasks);
+                },
+
+                async loadDashboard() {
+                    this.clearMessages();
+                    this.isLoading = true;
+
+                    try {
+                        this.hydrateAuthState();
+
+                        if (!this.getAccessToken()) {
+                            window.location.href = "/connexion";
+                            return;
+                        }
+
+                        if (this.userRole !== "prestataire") {
+                            window.location.href = "/";
+                            return;
+                        }
+
+                        await Promise.all([
+                            this.fetchProfile(),
+                            this.fetchUpcomingReservations(),
+                            this.fetchPastReservations(),
+                            this.fetchServices(),
+                            this.fetchDisponibilites()
+                        ]);
+
+                        await this.fetchCommentairesForReservations();
+                    } catch (error) {
+                        this.globalError = error.message || "Impossible de charger le tableau de bord.";
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                async refreshReservationsAndCommentaires() {
+                    await Promise.all([
+                        this.fetchUpcomingReservations(),
+                        this.fetchPastReservations()
+                    ]);
+
+                    await this.fetchCommentairesForReservations();
+                },
+
+                async changeReservationStatus(reservationId, statut) {
+                    this.clearMessages();
+                    this.reservationActionLoadingId = reservationId;
+
+                    try {
+                        const response = await fetch(`/prestataires/me/reservations/${reservationId}/statut`, {
+                            method: "PATCH",
+                            headers: this.buildHeaders(),
+                            body: JSON.stringify({statut})
+                        });
+
+                        if (this.handleUnauthorized(response)) return;
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(this.getErrorMessage(payload, "Impossible de mettre à jour le statut."));
+                        }
+
+                        this.globalMessage = "Statut de la réservation mis à jour avec succès.";
+                        await this.refreshReservationsAndCommentaires();
+                    } catch (error) {
+                        this.globalError = error.message || "Erreur lors de la mise à jour du statut.";
+                    } finally {
+                        this.reservationActionLoadingId = null;
+                    }
+                },
+
+                resetServiceForm() {
+                    this.serviceForm = {
+                        id: null,
+                        nom: "",
+                        description: "",
+                        prix: "",
+                        duree: ""
+                    };
+                },
+
+                startEditService(service) {
+                    this.clearMessages();
+
+                    this.serviceForm = {
+                        id: service.id,
+                        nom: service.nom || "",
+                        description: service.description || "",
+                        prix: service.prix ?? "",
+                        duree: service.duree ?? ""
+                    };
+                },
+
+                validateServiceForm() {
+                    if (!this.serviceForm.nom.trim()) return "Le nom du service est obligatoire.";
+                    if (!this.serviceForm.description.trim()) return "La description du service est obligatoire.";
+                    if (this.serviceForm.prix === "" || Number(this.serviceForm.prix) <= 0) return "Le prix doit être supérieur à 0.";
+                    if (this.serviceForm.duree === "" || Number(this.serviceForm.duree) <= 0) return "La durée doit être supérieure à 0.";
+                    return "";
+                },
+
+                async submitServiceForm() {
+                    this.clearMessages();
+
+                    const validationError = this.validateServiceForm();
+                    if (validationError) {
+                        this.globalError = validationError;
+                        return;
+                    }
+
+                    this.serviceActionLoading = true;
+
+                    try {
+                        const payloadToSend = {
+                            nom: this.serviceForm.nom.trim(),
+                            description: this.serviceForm.description.trim(),
+                            prix: Number(this.serviceForm.prix),
+                            duree: Number(this.serviceForm.duree)
+                        };
+
+                        const isEdit = Boolean(this.serviceForm.id);
+                        const url = isEdit
+                            ? `/prestataires/me/services/${this.serviceForm.id}`
+                            : "/prestataires/me/services";
+
+                        const method = isEdit ? "PUT" : "POST";
+
+                        const response = await fetch(url, {
+                            method,
+                            headers: this.buildHeaders(),
+                            body: JSON.stringify(payloadToSend)
+                        });
+
+                        if (this.handleUnauthorized(response)) return;
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(this.getErrorMessage(payload, "Impossible d’enregistrer le service."));
+                        }
+
+                        this.globalMessage = isEdit
+                            ? "Service mis à jour avec succès."
+                            : "Service ajouté avec succès.";
+
+                        this.resetServiceForm();
+                        await this.fetchServices();
+                    } catch (error) {
+                        this.globalError = error.message || "Erreur lors de l’enregistrement du service.";
+                    } finally {
+                        this.serviceActionLoading = false;
+                    }
+                },
+
+                async deleteService(serviceId) {
+                    this.clearMessages();
+
+                    const confirmed = window.confirm("Voulez-vous vraiment supprimer ce service ?");
+                    if (!confirmed) return;
+
+                    this.serviceActionLoading = true;
+
+                    try {
+                        const response = await fetch(`/prestataires/me/services/${serviceId}`, {
+                            method: "DELETE",
+                            headers: this.buildHeaders(false)
+                        });
+
+                        if (this.handleUnauthorized(response)) return;
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(this.getErrorMessage(payload, "Impossible de supprimer le service."));
+                        }
+
+                        this.globalMessage = "Service supprimé avec succès.";
+
+                        if (Number(this.serviceForm.id) === Number(serviceId)) {
+                            this.resetServiceForm();
+                        }
+
+                        await this.fetchServices();
+                    } catch (error) {
+                        this.globalError = error.message || "Erreur lors de la suppression du service.";
+                    } finally {
+                        this.serviceActionLoading = false;
+                    }
+                },
+
+                resetDisponibiliteForm() {
+                    this.disponibiliteForm = {
+                        jour: "",
+                        heure_debut: "",
+                        heure_fin: "",
+                        statut: "Disponible"
+                    };
+
+                    this.disponibiliteEditMode = false;
+                    this.disponibiliteOriginalKey = {
+                        jour: "",
+                        heure_debut: "",
+                        heure_fin: ""
+                    };
+                },
+
+                startEditDisponibilite(dispo) {
+                    this.clearMessages();
+
+                    this.disponibiliteForm = {
+                        jour: dispo.jour || "",
+                        heure_debut: this.formatTime(dispo.heure_debut),
+                        heure_fin: this.formatTime(dispo.heure_fin),
+                        statut: dispo.statut || "Disponible"
+                    };
+
+                    this.disponibiliteEditMode = true;
+                    this.disponibiliteOriginalKey = {
+                        jour: dispo.jour,
+                        heure_debut: this.formatTime(dispo.heure_debut),
+                        heure_fin: this.formatTime(dispo.heure_fin)
+                    };
+                },
+
+                validateDisponibiliteForm() {
+                    if (!this.disponibiliteForm.jour) return "Le jour est obligatoire.";
+                    if (!this.disponibiliteForm.heure_debut) return "L’heure de début est obligatoire.";
+                    if (!this.disponibiliteForm.heure_fin) return "L’heure de fin est obligatoire.";
+                    if (!this.disponibiliteForm.statut) return "Le statut est obligatoire.";
+                    if (this.disponibiliteForm.heure_debut >= this.disponibiliteForm.heure_fin) {
+                        return "L’heure de fin doit être supérieure à l’heure de début.";
+                    }
+                    return "";
+                },
+
+                async submitDisponibiliteForm() {
+                    this.clearMessages();
+
+                    const validationError = this.validateDisponibiliteForm();
+                    if (validationError) {
+                        this.globalError = validationError;
+                        return;
+                    }
+
+                    this.disponibiliteActionLoading = true;
+
+                    try {
+                        const normalizedHeureDebut = this.disponibiliteForm.heure_debut.length === 5
+                            ? `${this.disponibiliteForm.heure_debut}:00`
+                            : this.disponibiliteForm.heure_debut;
+
+                        const normalizedHeureFin = this.disponibiliteForm.heure_fin.length === 5
+                            ? `${this.disponibiliteForm.heure_fin}:00`
+                            : this.disponibiliteForm.heure_fin;
+
+                        let payloadToSend = {
+                            jour: this.disponibiliteForm.jour,
+                            heure_debut: normalizedHeureDebut,
+                            heure_fin: normalizedHeureFin,
+                            statut: this.disponibiliteForm.statut
+                        };
+
+                        let method = "POST";
+                        let url = "/prestataires/me/disponibilites";
+
+                        if (this.disponibiliteEditMode) {
+                            method = "PUT";
+                            payloadToSend = {
+                                original_jour: this.disponibiliteOriginalKey.jour,
+                                original_heure_debut: this.disponibiliteOriginalKey.heure_debut.length === 5
+                                    ? `${this.disponibiliteOriginalKey.heure_debut}:00`
+                                    : this.disponibiliteOriginalKey.heure_debut,
+                                original_heure_fin: this.disponibiliteOriginalKey.heure_fin.length === 5
+                                    ? `${this.disponibiliteOriginalKey.heure_fin}:00`
+                                    : this.disponibiliteOriginalKey.heure_fin,
+                                jour: this.disponibiliteForm.jour,
+                                heure_debut: normalizedHeureDebut,
+                                heure_fin: normalizedHeureFin,
+                                statut: this.disponibiliteForm.statut
+                            };
+                        }
+
+                        const response = await fetch(url, {
+                            method,
+                            headers: this.buildHeaders(),
+                            body: JSON.stringify(payloadToSend)
+                        });
+
+                        if (this.handleUnauthorized(response)) return;
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(this.getErrorMessage(payload, "Impossible d’enregistrer la disponibilité."));
+                        }
+
+                        this.globalMessage = this.disponibiliteEditMode
+                            ? "Disponibilité mise à jour avec succès."
+                            : "Disponibilité ajoutée avec succès.";
+
+                        this.resetDisponibiliteForm();
+                        await this.fetchDisponibilites();
+                    } catch (error) {
+                        this.globalError = error.message || "Erreur lors de l’enregistrement de la disponibilité.";
+                    } finally {
+                        this.disponibiliteActionLoading = false;
+                    }
+                },
+
+                async deleteDisponibilite(dispo) {
+                    this.clearMessages();
+
+                    const confirmed = window.confirm("Voulez-vous vraiment supprimer cette disponibilité ?");
+                    if (!confirmed) return;
+
+                    this.disponibiliteActionLoading = true;
+
+                    try {
+                        const jour = encodeURIComponent(dispo.jour);
+                        const heureDebut = encodeURIComponent(
+                            this.formatTime(dispo.heure_debut).length === 5
+                                ? `${this.formatTime(dispo.heure_debut)}:00`
+                                : this.formatTime(dispo.heure_debut)
+                        );
+                        const heureFin = encodeURIComponent(
+                            this.formatTime(dispo.heure_fin).length === 5
+                                ? `${this.formatTime(dispo.heure_fin)}:00`
+                                : this.formatTime(dispo.heure_fin)
+                        );
+
+                        const response = await fetch(
+                            `/prestataires/me/disponibilites/${jour}/${heureDebut}/${heureFin}`,
+                            {
+                                method: "DELETE",
+                                headers: this.buildHeaders(false)
+                            }
+                        );
+
+                        if (this.handleUnauthorized(response)) return;
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de supprimer la disponibilité.")
+                            );
+                        }
+
+                        this.globalMessage = "Disponibilité supprimée avec succès.";
+
+                        await this.loadDashboard();
+                    } catch (error) {
+                        this.globalError = error.message || "Erreur lors de la suppression de la disponibilité.";
+                    } finally {
+                        this.disponibiliteActionLoading = false;
+                    }
+                },
+
+                validatePasswordForm() {
+                    if (!this.passwordForm.ancien_mot_de_passe) return "L’ancien mot de passe est obligatoire.";
+                    if (!this.passwordForm.nouveau_mot_de_passe) return "Le nouveau mot de passe est obligatoire.";
+                    const password = this.passwordForm.nouveau_mot_de_passe;
+                    const normalizedPassword = password.replace(/[\s_\-.'"`]+/g, "").toLowerCase();
+                    const weakPasswords = [
+                        "password",
+                        "password123",
+                        "passwordpassword",
+                        "password123password",
+                        "motdepasse",
+                        "motdepasse123",
+                        "motdepassemotdepasse",
+                        "admin",
+                        "admin123",
+                        "qwerty",
+                        "qwertyqwerty",
+                        "azerty",
+                        "azertyazerty",
+                        "123456789",
+                        "1234567890",
+                        "lavageauto",
+                        "lavageauto123",
+                        "lavageautolavageauto"
+                    ];
+                    const weakPasswordRoots = ["password", "motdepasse", "admin", "qwerty", "azerty", "lavageauto"];
+                    if (password.length < 15) return "Le nouveau mot de passe doit contenir au moins 15 caractères.";
+                    if (password.length > 128) return "Le nouveau mot de passe ne doit pas dépasser 128 caractères.";
+                    if (/[\u0000-\u001F\u007F]/.test(password)) return "Le nouveau mot de passe ne doit pas contenir de caractères de contrôle.";
+                    if (!normalizedPassword || weakPasswords.includes(normalizedPassword) || weakPasswordRoots.some(root => new RegExp(`^${root}\\d*$`).test(normalizedPassword))) return "Ce mot de passe est trop facile à deviner.";
+                    if (this.passwordForm.nouveau_mot_de_passe !== this.passwordForm.confirmation_mot_de_passe) {
+                        return "La confirmation du nouveau mot de passe ne correspond pas.";
+                    }
+                    return "";
+                },
+
+                async submitChangePassword() {
+                    this.clearMessages();
+
+                    const validationError = this.validatePasswordForm();
+                    if (validationError) {
+                        this.globalError = validationError;
+                        return;
+                    }
+
+                    this.passwordActionLoading = true;
+
+                    try {
+                        const response = await fetch("/prestataires/me/change-password", {
+                            method: "PUT",
+                            headers: this.buildHeaders(),
+                            body: JSON.stringify({
+                                ancien_mot_de_passe: this.passwordForm.ancien_mot_de_passe,
+                                nouveau_mot_de_passe: this.passwordForm.nouveau_mot_de_passe,
+                                confirmation_mot_de_passe: this.passwordForm.confirmation_mot_de_passe
+                            })
+                        });
+
+                        if (this.handleUnauthorized(response)) return;
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(this.getErrorMessage(payload, "Impossible de changer le mot de passe."));
+                        }
+
+                        this.globalMessage = "Mot de passe modifié avec succès.";
+
+                        this.passwordForm = {
+                            ancien_mot_de_passe: "",
+                            nouveau_mot_de_passe: "",
+                            confirmation_mot_de_passe: ""
+                        };
+                    } catch (error) {
+                        this.globalError = error.message || "Erreur lors du changement de mot de passe.";
+                    } finally {
+                        this.passwordActionLoading = false;
+                    }
+                }
+            },
+
+            async mounted() {
+                this.hydrateAuthState();
+
+                if (!this.getAccessToken()) {
+                    window.location.href = "/connexion";
+                    return;
+                }
+
+                if (this.userRole !== "prestataire") {
+                    window.location.href = "/";
+                    return;
+                }
+
+                await this.loadDashboard();
+            }
+        };
+
+        Vue.createApp(PrestataireDashboardApp).mount("#app");
+    </script>
+{% endblock %}

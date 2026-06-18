@@ -1,0 +1,305 @@
+{% extends "base_public.html" %}
+
+{% block title %}Profil prestataire | LavageAuto{% endblock %}
+
+{% block content %}
+    <section class="section">
+        <div class="container">
+            <div v-if="loadingPrestataire" class="section-description">
+                Chargement du profil...
+            </div>
+
+            <div v-else-if="prestataireError" class="section-description">
+                ${ prestataireError }
+            </div>
+
+            <div v-else-if="!prestataire" class="section-description">
+                Prestataire introuvable.
+            </div>
+
+            <div v-else class="prestataire-profile-layout">
+                <aside class="prestataire-profile-sidebar">
+                    <div class="prestataire-profile-card">
+                        <div class="prestataire-profile-avatar">
+                            ${ getInitials(formatFullName(prestataire.prenoms, prestataire.nom)) }
+                        </div>
+
+                        <h1 class="prestataire-profile-name">
+                            ${ formatFullName(prestataire.prenoms, prestataire.nom) }
+                        </h1>
+
+                        <p class="prestataire-profile-rating">
+                            Note : ${ formatRating(prestataire.note_moyenne) }
+                        </p>
+
+                        <div class="prestataire-profile-contact">
+                            <p><strong>Courriel :</strong> ${ prestataire.courriel || 'Non disponible' }</p>
+                            <p><strong>Téléphone :</strong> ${ prestataire.telephone || 'Non disponible' }</p>
+                        </div>
+
+                        <div class="prestataire-profile-address">
+                            <h3>Adresse</h3>
+                            <p>
+                                ${ formatAddress(
+                                prestataire.adresse_numero,
+                                prestataire.adresse_rue,
+                                prestataire.adresse_ville,
+                                prestataire.adresse_province,
+                                prestataire.adresse_code_postal
+                                ) }
+                            </p>
+                        </div>
+                    </div>
+                </aside>
+
+                <div class="prestataire-profile-content">
+                    <section class="prestataire-section-card">
+                        <div class="section-heading section-heading-small">
+                            <span class="section-kicker">Services</span>
+                            <h2 class="section-title section-title-small">Services offerts</h2>
+                        </div>
+
+                        <div v-if="!prestataire.services || prestataire.services.length === 0"
+                             class="section-description">
+                            Aucun service affiché pour le moment.
+                        </div>
+
+                        <div v-else class="service-grid">
+                            <article class="service-card service-card-page" v-for="service in prestataire.services"
+                                     :key="service.id">
+                                <div class="service-card-top">
+                                    <span class="service-badge">Disponible</span>
+                                    <h3>${ service.nom || 'Service' }</h3>
+                                </div>
+
+                                <p class="service-description">
+                                    ${ service.description || 'Description non disponible.' }
+                                </p>
+
+                                <div class="service-meta service-meta-page">
+                                    <div class="service-meta-box">
+                                        <span class="service-meta-label">Durée</span>
+                                        <span class="service-meta-value">${ formatDuration(service.duree) }</span>
+                                    </div>
+
+                                    <div class="service-meta-box">
+                                        <span class="service-meta-label">Prix</span>
+                                        <span class="service-meta-value">${ formatPrice(service.prix) }</span>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
+                    </section>
+
+                    <section class="prestataire-section-card">
+                        <div class="section-heading section-heading-small">
+                            <span class="section-kicker">Disponibilités</span>
+                            <h2 class="section-title section-title-small">Plages disponibles</h2>
+                        </div>
+
+                        <div v-if="!prestataire.disponibilites || prestataire.disponibilites.length === 0"
+                             class="section-description">
+                            Aucune disponibilité affichée pour le moment.
+                        </div>
+
+                        <div v-else class="disponibilites-list">
+                            <article class="disponibilite-card" v-for="(dispo, index) in prestataire.disponibilites"
+                                     :key="index">
+                                <p><strong>Jour :</strong> ${ dispo.jour || 'Non disponible' }</p>
+                                <p><strong>Début :</strong> ${ dispo.heure_debut || 'Non disponible' }</p>
+                                <p><strong>Fin :</strong> ${ dispo.heure_fin || 'Non disponible' }</p>
+                                <p><strong>Statut :</strong> ${ dispo.statut || 'Non disponible' }</p>
+                            </article>
+                        </div>
+                    </section>
+
+                    <section class="prestataire-section-card">
+                        <div class="section-heading section-heading-small">
+                            <span class="section-kicker">Commentaires</span>
+                            <h2 class="section-title section-title-small">Avis des clients</h2>
+                        </div>
+
+                        <div v-if="loadingCommentaires" class="section-description">
+                            Chargement des commentaires...
+                        </div>
+
+                        <div v-else-if="commentairesError" class="section-description">
+                            ${ commentairesError }
+                        </div>
+
+                        <div v-else-if="commentaires.length === 0" class="empty-state-card">
+                            <h3>Aucun commentaire pour le moment</h3>
+                            <p>
+                                Ce prestataire n’a pas encore reçu d’avis public.
+                            </p>
+                        </div>
+
+                        <div v-else class="commentaires-list">
+                            <article class="commentaire-card" v-for="commentaire in commentaires" :key="commentaire.id">
+                                <div class="commentaire-card-header">
+                                    <strong class="commentaire-note">
+                                        Note : ${ formatCommentNote(commentaire.note) }
+                                    </strong>
+                                </div>
+
+                                <p class="commentaire-texte">
+                                    ${ commentaire.texte || 'Aucun commentaire.' }
+                                </p>
+                            </article>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </section>
+{% endblock %}
+
+{% block vue_app %}
+    <script>
+        const PrestataireProfileApp = {
+            delimiters: ['${', '}'],
+            mixins: [BasePublicApp],
+            data() {
+                return {
+                    mobileMenuOpen: false,
+                    prestataireId: {{ prestataire_id | tojson }},
+                    prestataire: null,
+                    commentaires: [],
+                    loadingPrestataire: true,
+                    loadingCommentaires: true,
+                    prestataireError: "",
+                    commentairesError: ""
+                };
+            },
+            methods: {
+                async fetchPrestataire() {
+                    this.loadingPrestataire = true;
+                    this.prestataireError = "";
+
+                    try {
+                        const response = await fetch(`/prestataires/${this.prestataireId}`, {
+                            headers: {
+                                "Accept": "application/json"
+                            }
+                        });
+
+                        if (!response.ok) {
+                            throw new Error("Impossible de charger le profil du prestataire.");
+                        }
+
+                        const payload = await response.json();
+                        this.prestataire = payload?.data || null;
+                    } catch (error) {
+                        this.prestataireError = error.message || "Erreur lors du chargement du prestataire.";
+                        this.prestataire = null;
+                    } finally {
+                        this.loadingPrestataire = false;
+                    }
+                },
+
+                async fetchCommentaires() {
+                    this.loadingCommentaires = true;
+                    this.commentairesError = "";
+
+                    try {
+                        const response = await fetch(`/prestataires/${this.prestataireId}/commentaires`, {
+                            headers: {
+                                "Accept": "application/json"
+                            }
+                        });
+
+                        if (!response.ok) {
+                            throw new Error("Impossible de charger les commentaires.");
+                        }
+
+                        const payload = await response.json();
+                        this.commentaires = Array.isArray(payload?.data) ? payload.data : [];
+                    } catch (error) {
+                        this.commentairesError = error.message || "Erreur lors du chargement des commentaires.";
+                        this.commentaires = [];
+                    } finally {
+                        this.loadingCommentaires = false;
+                    }
+                },
+
+                formatFullName(prenoms, nom) {
+                    const fullName = `${prenoms || ""} ${nom || ""}`.trim();
+                    return fullName || "Prestataire";
+                },
+
+                formatRating(value) {
+                    if (value === null || value === undefined || value === "") {
+                        return "N/A";
+                    }
+
+                    const numberValue = Number(value);
+                    if (Number.isNaN(numberValue)) {
+                        return String(value);
+                    }
+
+                    return `${numberValue.toFixed(1)}/5`;
+                },
+
+                formatCommentNote(value) {
+                    if (value === null || value === undefined || value === "") {
+                        return "N/A";
+                    }
+
+                    const numberValue = Number(value);
+                    if (Number.isNaN(numberValue)) {
+                        return String(value);
+                    }
+
+                    return `${numberValue}/5`;
+                },
+
+                formatPrice(value) {
+                    if (value === null || value === undefined || value === "") {
+                        return "Non disponible";
+                    }
+
+                    const numberValue = Number(value);
+                    if (Number.isNaN(numberValue)) {
+                        return String(value);
+                    }
+
+                    return `${numberValue.toFixed(2)} $`;
+                },
+
+                formatDuration(value) {
+                    if (value === null || value === undefined || value === "") {
+                        return "Non disponible";
+                    }
+
+                    const numberValue = Number(value);
+                    if (Number.isNaN(numberValue)) {
+                        return String(value);
+                    }
+
+                    return `${numberValue.toFixed(2)} h`;
+                },
+
+                formatAddress(numero, rue, ville, province, codePostal) {
+                    const line1 = [numero, rue].filter(Boolean).join(" ");
+                    const line2 = [ville, province, codePostal].filter(Boolean).join(", ");
+                    return [line1, line2].filter(Boolean).join(" — ") || "Adresse non disponible";
+                },
+
+                getInitials(fullName) {
+                    if (!fullName) {
+                        return "PA";
+                    }
+
+                    const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
+                    return parts.slice(0, 2).map(part => part[0].toUpperCase()).join("");
+                }
+            },
+            mounted() {
+                this.fetchPrestataire();
+                this.fetchCommentaires();
+            }
+        };
+
+        Vue.createApp(PrestataireProfileApp).mount("#app");
+    </script>
+{% endblock %}

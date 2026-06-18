@@ -1,0 +1,456 @@
+{% extends "base_auth.html" %}
+
+{% block title %}Mon profil | LavageAuto{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/client.css') }}">
+{% endblock %}
+
+{% block content %}
+    <section class="client-dashboard-section">
+        <div class="container">
+            <div v-if="pageError" class="auth-message auth-message-error">
+                ${ pageError }
+            </div>
+
+            <div v-else class="profile-shell">
+                <div class="dashboard-hero">
+                    <div>
+                        <span class="section-kicker">Profil prestataire</span>
+                        <h1 class="dashboard-title">Gérez vos informations personnelles</h1>
+                        <p class="dashboard-subtitle">
+                            Consultez et mettez à jour vos coordonnées et votre adresse.
+                        </p>
+                    </div>
+
+                    <div class="dashboard-actions">
+                        <a href="{{ url_for('prestataire_front.prestataire_dashboard_page') }}" class="btn btn-secondary">
+                            Retour au tableau de bord
+                        </a>
+                    </div>
+                </div>
+
+                <section class="dashboard-section-card">
+                    <div v-if="loadingProfile" class="section-description">
+                        Chargement du profil...
+                    </div>
+
+                    <form v-else class="auth-form" @submit.prevent="submitProfileUpdate">
+                        <div class="auth-grid">
+                            <div class="form-group">
+                                <label for="nom">Nom</label>
+                                <input
+                                        id="nom"
+                                        v-model.trim="form.nom"
+                                        type="text"
+                                        class="auth-input"
+                                        required
+                                />
+                            </div>
+
+                            <div class="form-group">
+                                <label for="prenoms">Prénoms</label>
+                                <input
+                                        id="prenoms"
+                                        v-model.trim="form.prenoms"
+                                        type="text"
+                                        class="auth-input"
+                                        required
+                                />
+                            </div>
+                        </div>
+
+                        <div class="auth-grid">
+                            <div class="form-group">
+                                <label for="date_naissance">Date de naissance</label>
+                                <input
+                                        id="date_naissance"
+                                        v-model="form.date_naissance"
+                                        type="date"
+                                        class="auth-input"
+                                        required
+                                />
+                            </div>
+
+                            <div class="form-group">
+                                <label for="courriel">Courriel</label>
+                                <input
+                                        id="courriel"
+                                        v-model.trim="form.courriel"
+                                        type="email"
+                                        class="auth-input"
+                                        required
+                                />
+                            </div>
+
+                            <div class="form-group">
+                                <label for="nas">Numero d'assurance social</label>
+                                <input
+                                        id="nas"
+                                        v-model.trim="form.nas"
+                                        type="text"
+                                        class="auth-input"
+                                        required
+                                />
+                            </div>
+
+                            <div class="form-group">
+                                <label for="note_moyenne">Note moyenne</label>
+                                <input
+                                        id="note_moyenne"
+                                        v-model.trim="form.note_moyenne"
+                                        type="text"
+                                        class="auth-input"
+                                        required
+                                />
+                            </div>
+                        </div>
+
+                        <div class="auth-grid">
+                            <div class="form-group">
+                                <label for="telephone">Téléphone</label>
+                                <input
+                                        id="telephone"
+                                        v-model.trim="form.telephone"
+                                        type="text"
+                                        class="auth-input"
+                                        required
+                                />
+                            </div>
+                        </div>
+
+                        <div class="auth-grid auth-grid-address">
+                            <div class="form-group">
+                                <label for="adresse_numero">Numéro</label>
+                                <input
+                                        id="adresse_numero"
+                                        v-model.trim="form.adresse_numero"
+                                        type="text"
+                                        class="auth-input"
+                                        required
+                                />
+                            </div>
+
+                            <div class="form-group auth-grid-span-2">
+                                <label for="adresse_rue">Rue</label>
+                                <input
+                                        id="adresse_rue"
+                                        v-model.trim="form.adresse_rue"
+                                        type="text"
+                                        class="auth-input"
+                                        required
+                                />
+                            </div>
+                        </div>
+
+                        <div class="auth-grid auth-grid-address">
+                            <div class="form-group">
+                                <label for="adresse_ville">Ville</label>
+                                <input
+                                        id="adresse_ville"
+                                        v-model.trim="form.adresse_ville"
+                                        type="text"
+                                        class="auth-input"
+                                        required
+                                />
+                            </div>
+
+                            <div class="form-group">
+                                <label for="adresse_province">Province</label>
+                                <input
+                                        id="adresse_province"
+                                        v-model.trim="form.adresse_province"
+                                        type="text"
+                                        class="auth-input"
+                                        required
+                                />
+                            </div>
+
+                            <div class="form-group">
+                                <label for="adresse_code_postal">Code postal</label>
+                                <input
+                                        id="adresse_code_postal"
+                                        v-model.trim="form.adresse_code_postal"
+                                        type="text"
+                                        class="auth-input"
+                                        required
+                                />
+                            </div>
+                        </div>
+
+                        <div v-if="errorMessage" class="auth-message auth-message-error">
+                            ${ errorMessage }
+                        </div>
+
+                        <div v-if="successMessage" class="auth-message auth-message-success">
+                            ${ successMessage }
+                        </div>
+
+                        <button type="submit" class="btn btn-primary auth-submit" :disabled="saving">
+                            <span v-if="saving">Enregistrement...</span>
+                            <span v-else>Enregistrer les modifications</span>
+                        </button>
+                    </form>
+                </section>
+            </div>
+        </div>
+    </section>
+{% endblock %}
+
+{% block vue_app %}
+    <script>
+        const PrestataireProfileApp = {
+            delimiters: ['${', '}'],
+            mixins: [BasePublicApp],
+            data() {
+                return {
+                    pageError: "",
+                    errorMessage: "",
+                    successMessage: "",
+                    loadingProfile: false,
+                    saving: false,
+                    form: {
+                        nom: "",
+                        prenoms: "",
+                        date_naissance: "",
+                        courriel: "",
+                        telephone: "",
+                        adresse_numero: "",
+                        adresse_rue: "",
+                        adresse_ville: "",
+                        adresse_province: "",
+                        adresse_code_postal: "",
+                        nas: "",
+                        note_moyenne: ""
+                    }
+                };
+            },
+            methods: {
+                getAccessToken() {
+                    return localStorage.getItem("access_token") || "";
+                },
+
+                getUserRole() {
+                    return localStorage.getItem("user_role") || "";
+                },
+
+                redirectToLogin(message) {
+                    this.pageError = message;
+
+                    setTimeout(() => {
+                        window.location.href = "{{ url_for('public.login_page') }}";
+                    }, 1400);
+                },
+
+                async safeReadJson(response) {
+                    const contentType = response.headers.get("content-type") || "";
+                    if (!contentType.includes("application/json")) {
+                        return null;
+                    }
+
+                    try {
+                        return await response.json();
+                    } catch {
+                        return null;
+                    }
+                },
+
+                getErrorMessage(payload, fallbackMessage) {
+                    if (payload && typeof payload.message === "string" && payload.message.trim()) {
+                        return payload.message;
+                    }
+
+                    if (payload && typeof payload.error === "string" && payload.error.trim()) {
+                        return payload.error;
+                    }
+
+                    return fallbackMessage;
+                },
+
+                validateForm() {
+                    const requiredFields = [
+                        ["nom", "Veuillez entrer votre nom."],
+                        ["prenoms", "Veuillez entrer vos prénoms."],
+                        ["date_naissance", "Veuillez entrer votre date de naissance."],
+                        ["courriel", "Veuillez entrer votre courriel."],
+                        ["telephone", "Veuillez entrer votre téléphone."],
+                        ["adresse_numero", "Veuillez entrer votre numéro d’adresse."],
+                        ["adresse_rue", "Veuillez entrer votre rue."],
+                        ["adresse_ville", "Veuillez entrer votre ville."],
+                        ["adresse_province", "Veuillez entrer votre province."],
+                        ["adresse_code_postal", "Veuillez entrer votre code postal."]
+                    ];
+
+                    for (const [field, message] of requiredFields) {
+                        if (!this.form[field] || !String(this.form[field]).trim()) {
+                            return message;
+                        }
+                    }
+
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (!emailRegex.test(this.form.courriel.trim())) {
+                        return "Veuillez entrer une adresse courriel valide.";
+                    }
+
+                    const codePostalRegex = /^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/;
+                    if (!codePostalRegex.test(this.form.adresse_code_postal.trim())) {
+                        return "Le code postal doit respecter le format A1A 1A1.";
+                    }
+
+                    const nasRegex = /^\d{9}$/;
+                    if (!nasRegex.test(this.form.nas.trim())) {
+                        return "Le NAS doit contenir exactement 9 chiffres.";
+                    }
+
+                    return "";
+                },
+
+                formatDateForInput(value) {
+                    if (!value) return "";
+
+                    if (typeof value === "string") {
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                            return value;
+                        }
+
+                        const parsed = new Date(value);
+                        if (!Number.isNaN(parsed.getTime())) {
+                            return parsed.toISOString().split("T")[0];
+                        }
+
+                        return "";
+                    }
+
+                    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+                        return value.toISOString().split("T")[0];
+                    }
+
+                    return "";
+                },
+
+                hydrateForm(prestataireData) {
+                    this.form.nom = prestataireData.nom || "";
+                    this.form.prenoms = prestataireData.prenoms || "";
+                    this.form.date_naissance = this.formatDateForInput(prestataireData.date_naissance) || "";
+                    this.form.courriel = prestataireData.courriel || "";
+                    this.form.telephone = prestataireData.telephone || "";
+                    this.form.adresse_numero = prestataireData.adresse_numero || "";
+                    this.form.adresse_rue = prestataireData.adresse_rue || "";
+                    this.form.adresse_ville = prestataireData.adresse_ville || "";
+                    this.form.adresse_province = prestataireData.adresse_province || "";
+                    this.form.adresse_code_postal = prestataireData.adresse_code_postal || "";
+                    this.form.nas = prestataireData.nas || "";
+                    this.form.note_moyenne = prestataireData.note_moyenne || "";
+
+                },
+
+                async fetchProfile() {
+                    this.loadingProfile = true;
+                    this.pageError = "";
+
+                    try {
+                        const response = await fetch("/prestataires/me", {
+                            headers: {
+                                "Accept": "application/json",
+                                "Authorization": `Bearer ${this.getAccessToken()}`
+                            }
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de charger votre profil.")
+                            );
+                        }
+
+                        const prestataireData = payload.data || {};
+                        this.hydrateForm(prestataireData);
+
+                        localStorage.setItem("user_profile", JSON.stringify(prestataireData));
+                        this.hydrateAuthState();
+                    } catch (error) {
+                        this.pageError = error.message || "Erreur lors du chargement du profil.";
+                    } finally {
+                        this.loadingProfile = false;
+                    }
+                },
+
+                async submitProfileUpdate() {
+                    this.errorMessage = "";
+                    this.successMessage = "";
+
+                    const validationError = this.validateForm();
+                    if (validationError) {
+                        this.errorMessage = validationError;
+                        return;
+                    }
+
+                    this.saving = true;
+
+                    try {
+                        const response = await fetch("/prestataires/me", {
+                            method: "PUT",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Accept": "application/json",
+                                "Authorization": `Bearer ${this.getAccessToken()}`
+                            },
+                            body: JSON.stringify({
+                                nom: this.form.nom.trim(),
+                                prenoms: this.form.prenoms.trim(),
+                                date_naissance: this.form.date_naissance,
+                                courriel: this.form.courriel.trim(),
+                                telephone: this.form.telephone.trim(),
+                                adresse_numero: this.form.adresse_numero.trim(),
+                                adresse_rue: this.form.adresse_rue.trim(),
+                                adresse_ville: this.form.adresse_ville.trim(),
+                                adresse_province: this.form.adresse_province.trim(),
+                                adresse_code_postal: this.form.adresse_code_postal.trim(),
+                                nas: this.form.nas.trim()
+                            })
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de mettre à jour votre profil.")
+                            );
+                        }
+
+                        const updatedProfile = payload.data || { ...this.form };
+                        this.hydrateForm(updatedProfile);
+
+                        localStorage.setItem("user_profile", JSON.stringify(updatedProfile));
+                        this.hydrateAuthState();
+
+                        this.successMessage = "Profil mis à jour avec succès.";
+                    } catch (error) {
+                        this.errorMessage = error.message || "Erreur lors de la mise à jour du profil.";
+                    } finally {
+                        this.saving = false;
+                    }
+                }
+            },
+            mounted() {
+                const accessToken = this.getAccessToken();
+                const role = this.getUserRole();
+
+                if (!accessToken) {
+                    this.redirectToLogin("Vous devez être connecté pour accéder à votre profil.");
+                    return;
+                }
+
+                if (role !== "prestataire") {
+                    this.redirectToLogin("Vous devez être connecté comme prestataire pour accéder à cette page.");
+                    return;
+                }
+
+                this.fetchProfile();
+            }
+        };
+
+        Vue.createApp(PrestataireProfileApp).mount("#app");
+    </script>
+{% endblock %}

@@ -1,0 +1,424 @@
+{% extends "base_auth.html" %}
+
+{% block title %}Réserver un service | LavageAuto{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/client.css') }}">
+{% endblock %}
+
+{% block content %}
+    <section class="auth-section">
+        <div class="container">
+            <div class="auth-wrapper">
+                <div class="auth-card auth-card-register">
+                    <div class="auth-card-inner auth-card-inner-register">
+                        <div class="auth-header">
+                            <h1 class="auth-title">Réserver un service</h1>
+                            <p class="auth-subtitle">
+                                Sélectionnez un service, une date et une heure. Nous vous proposerons les prestataires
+                                disponibles.
+                            </p>
+                        </div>
+
+                        <div v-if="pageError" class="auth-message auth-message-error">
+                            ${ pageError }
+                        </div>
+
+                        <form v-else class="auth-form" @submit.prevent="submitReservation">
+                            <div class="auth-grid">
+                                <div class="form-group">
+                                    <label for="date">Date</label>
+                                    <input
+                                            id="date"
+                                            v-model="form.date"
+                                            type="date"
+                                            class="auth-input"
+                                            required
+                                    />
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="heure_debut">Heure de début</label>
+                                    <input
+                                            id="heure_debut"
+                                            v-model="form.heure_debut"
+                                            type="time"
+                                            class="auth-input"
+                                            required
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="service_id">Service</label>
+                                <select id="service_id" v-model="form.service_id" class="auth-input" required>
+                                    <option value="">Sélectionnez un service</option>
+                                    <option v-for="service in services" :key="service.id" :value="String(service.id)">
+                                        ${ service.nom } — ${ formatPrice(service.prix) } — ${
+                                        formatDuration(service.duree) }
+                                    </option>
+                                </select>
+                            </div>
+
+                            <button
+                                    type="button"
+                                    class="btn btn-secondary auth-submit"
+                                    @click="searchPrestataires"
+                                    :disabled="loadingPrestataires"
+                            >
+                                <span v-if="loadingPrestataires">Recherche en cours...</span>
+                                <span v-else>Rechercher les prestataires disponibles</span>
+                            </button>
+
+                            <div v-if="prestatairesError" class="auth-message auth-message-error">
+                                ${ prestatairesError }
+                            </div>
+
+                            <div v-if="availablePrestataires.length > 0" class="form-group">
+                                <label for="prestataire_id">Prestataire disponible</label>
+                                <select id="prestataire_id" v-model="form.prestataire_id" class="auth-input" required>
+                                    <option value="">Sélectionnez un prestataire</option>
+                                    <option
+                                            v-for="prestataire in availablePrestataires"
+                                            :key="prestataire.id"
+                                            :value="String(prestataire.id)"
+                                    >
+                                        ${ prestataire.prenoms } ${ prestataire.nom } — Note ${
+                                        formatRating(prestataire.note_moyenne) }
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div v-if="selectedService" class="reservation-summary-card">
+                                <h3>Résumé de la réservation</h3>
+                                <p><strong>Service :</strong> ${ selectedService.nom }</p>
+                                <p><strong>Date :</strong> ${ form.date || 'Non définie' }</p>
+                                <p><strong>Heure :</strong> ${ form.heure_debut || 'Non définie' }</p>
+                                <p><strong>Prix appliqué :</strong> ${ formatPrice(selectedService.prix) }</p>
+                                <p><strong>Durée prévue :</strong> ${ formatDuration(selectedService.duree) }</p>
+                                <p><strong>Quantité :</strong> 1</p>
+                            </div>
+
+                            <div v-if="errorMessage" class="auth-message auth-message-error">
+                                ${ errorMessage }
+                            </div>
+
+                            <div v-if="successMessage" class="auth-message auth-message-success">
+                                ${ successMessage }
+                            </div>
+
+                            <button
+                                    type="submit"
+                                    class="btn btn-primary auth-submit"
+                                    :disabled="loadingReservation || !form.prestataire_id || !selectedService"
+                            >
+                                <span v-if="loadingReservation">Confirmation...</span>
+                                <span v-else>Confirmer la réservation</span>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+{% endblock %}
+
+{% block vue_app %}
+    <script>
+        const ReservationApp = {
+            delimiters: ['${', '}'],
+            mixins: [BasePublicApp],
+            data() {
+                return {
+                    loadingServices: false,
+                    loadingPrestataires: false,
+                    loadingReservation: false,
+
+                    pageError: "",
+                    errorMessage: "",
+                    successMessage: "",
+                    prestatairesError: "",
+
+                    services: [],
+                    availablePrestataires: [],
+
+                    form: {
+                        date: "",
+                        heure_debut: "",
+                        service_id: "",
+                        prestataire_id: ""
+                    }
+                };
+            },
+            computed: {
+                selectedService() {
+                    const serviceId = Number(this.form.service_id);
+                    return this.services.find(s => Number(s.id) === serviceId) || null;
+                }
+            },
+            methods: {
+                getAccessToken() {
+                    return localStorage.getItem("access_token") || "";
+                },
+
+                getUserRole() {
+                    return localStorage.getItem("user_role") || "";
+                },
+
+                async safeReadJson(response) {
+                    const contentType = response.headers.get("content-type") || "";
+                    if (!contentType.includes("application/json")) {
+                        return null;
+                    }
+
+                    try {
+                        return await response.json();
+                    } catch {
+                        return null;
+                    }
+                },
+
+                getErrorMessage(payload, fallbackMessage) {
+                    if (payload && typeof payload.message === "string" && payload.message.trim()) {
+                        return payload.message;
+                    }
+
+                    if (payload && typeof payload.error === "string" && payload.error.trim()) {
+                        return payload.error;
+                    }
+
+                    return fallbackMessage;
+                },
+
+                validateSearchForm() {
+                    if (!this.form.date) {
+                        return "Veuillez choisir une date.";
+                    }
+
+                    if (!this.form.heure_debut) {
+                        return "Veuillez choisir une heure de début.";
+                    }
+
+                    if (!this.form.service_id) {
+                        return "Veuillez choisir un service.";
+                    }
+
+                    return "";
+                },
+
+                validateReservationForm() {
+                    const baseError = this.validateSearchForm();
+                    if (baseError) {
+                        return baseError;
+                    }
+
+                    if (!this.form.prestataire_id) {
+                        return "Veuillez sélectionner un prestataire.";
+                    }
+
+                    if (!this.selectedService) {
+                        return "Le service sélectionné est invalide.";
+                    }
+
+                    return "";
+                },
+
+                async fetchServices() {
+                    this.loadingServices = true;
+
+                    try {
+                        const response = await fetch("/services", {
+                            headers: {
+                                "Accept": "application/json"
+                            }
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(this.getErrorMessage(payload, "Impossible de charger les services."));
+                        }
+
+                        this.services = Array.isArray(payload.data) ? payload.data : [];
+                    } catch (error) {
+                        this.pageError = error.message || "Erreur au chargement des services.";
+                    } finally {
+                        this.loadingServices = false;
+                    }
+                },
+
+                async searchPrestataires() {
+                    this.prestatairesError = "";
+                    this.errorMessage = "";
+                    this.successMessage = "";
+                    this.availablePrestataires = [];
+                    this.form.prestataire_id = "";
+
+                    const validationError = this.validateSearchForm();
+                    if (validationError) {
+                        this.prestatairesError = validationError;
+                        return;
+                    }
+
+                    this.loadingPrestataires = true;
+
+                    try {
+                        const heureDebut = this.form.heure_debut.length === 5
+                            ? `${this.form.heure_debut}:00`
+                            : this.form.heure_debut;
+
+                        const params = new URLSearchParams({
+                            service_id: this.form.service_id,
+                            date: this.form.date,
+                            heure_debut: heureDebut
+                        });
+
+                        const response = await fetch(`/prestataires/disponibles?${params.toString()}`, {
+                            headers: {
+                                "Accept": "application/json"
+                            }
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de charger les prestataires disponibles.")
+                            );
+                        }
+
+                        this.availablePrestataires = Array.isArray(payload.data) ? payload.data : [];
+
+                        if (this.availablePrestataires.length === 0) {
+                            this.prestatairesError = "Aucun prestataire disponible pour ce créneau et ce service.";
+                        }
+                    } catch (error) {
+                        this.prestatairesError = error.message || "Erreur lors de la recherche des prestataires.";
+                    } finally {
+                        this.loadingPrestataires = false;
+                    }
+                },
+
+                async submitReservation() {
+                    this.errorMessage = "";
+                    this.successMessage = "";
+
+                    const accessToken = this.getAccessToken();
+                    const role = this.getUserRole();
+
+                    if (!accessToken) {
+                        this.redirectToLogin("Votre session a expiré. Veuillez vous reconnecter.");
+                        return;
+                    }
+
+                    if (role !== "client") {
+                        this.redirectToLogin("Vous devez être connecté comme client pour réserver.");
+                        return;
+                    }
+
+                    const validationError = this.validateReservationForm();
+                    if (validationError) {
+                        this.errorMessage = validationError;
+                        return;
+                    }
+
+                    this.loadingReservation = true;
+
+                    try {
+                        const heureDebut = this.form.heure_debut.length === 5
+                            ? `${this.form.heure_debut}:00`
+                            : this.form.heure_debut;
+
+                        const payloadToSend = {
+                            prestataire_id: Number(this.form.prestataire_id),
+                            date: this.form.date,
+                            heure_debut: heureDebut,
+                            services: [
+                                {
+                                    service_id: Number(this.selectedService.id),
+                                    prix_applique: Number(this.selectedService.prix),
+                                    duree_prevue: Number(this.selectedService.duree),
+                                    quantite: 1
+                                }
+                            ]
+                        };
+
+                        const response = await fetch("/new_reservation", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Accept": "application/json",
+                                "Authorization": `Bearer ${accessToken}`
+                            },
+                            body: JSON.stringify(payloadToSend)
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de créer la réservation.")
+                            );
+                        }
+
+                        this.successMessage = "Réservation confirmée avec succès.";
+
+                        setTimeout(() => {
+                            window.location.href = "{{ url_for('client_front.client_dashboard_page') }}";
+                        }, 1000);
+
+                    } catch (error) {
+                        this.errorMessage = error.message || "Erreur lors de la création de la réservation.";
+                    } finally {
+                        this.loadingReservation = false;
+                    }
+                },
+
+                formatPrice(value) {
+                    const n = Number(value);
+                    if (Number.isNaN(n)) return "Non disponible";
+                    return `${n.toFixed(2)} $`;
+                },
+
+                formatDuration(value) {
+                    const n = Number(value);
+                    if (Number.isNaN(n)) return "Non disponible";
+                    return `${n.toFixed(2)} h`;
+                },
+
+                formatRating(value) {
+                    const n = Number(value);
+                    if (Number.isNaN(n)) return "N/A";
+                    return `${n.toFixed(1)}/5`;
+                },
+                redirectToLogin(message) {
+                    this.pageError = message;
+                    this.errorMessage = message;
+
+                    setTimeout(() => {
+                        window.location.href = "{{ url_for('public.login_page') }}";
+                    }, 1400);
+                }
+
+            },
+            mounted() {
+                const accessToken = this.getAccessToken();
+                const role = this.getUserRole();
+
+                if (!accessToken) {
+                    this.redirectToLogin("Vous devez être connecté pour accéder à cette page.");
+                    return;
+                }
+
+                if (role !== "client") {
+                    this.redirectToLogin("Vous devez être connecté comme client pour réserver.");
+                    return;
+                }
+
+                this.fetchServices();
+            }
+        };
+
+        Vue.createApp(ReservationApp).mount("#app");
+    </script>
+{% endblock %}

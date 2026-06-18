@@ -1,0 +1,199 @@
+{% extends "base_public.html" %}
+
+{% block title %}Services | LavageAuto{% endblock %}
+
+{% block content %}
+    <section class="section">
+        <div class="container">
+            <div class="section-heading">
+                <span class="section-kicker">Nos services</span>
+                <h1 class="section-title">Choisissez le service adapté à votre véhicule</h1>
+                <p class="section-description">
+                    Consultez les services disponibles et trouvez l’option qui correspond à votre besoin.
+                </p>
+            </div>
+
+            <div class="services-toolbar" style="margin-bottom: 28px">
+                <input
+                        v-model="search"
+                        type="text"
+                        class="services-search"
+                        placeholder="Rechercher un service..."
+                />
+            </div>
+
+            <div v-if="loadingServices" class="section-description">
+                Chargement des services...
+            </div>
+
+            <div v-else-if="servicesError" class="section-description">
+                ${ servicesError }
+            </div>
+
+            <div v-else-if="filteredServices.length === 0" class="section-description">
+                Aucun service trouvé.
+            </div>
+
+            <div v-else class="service-grid">
+                <article class="service-card service-card-page" v-for="service in filteredServices" :key="service.id">
+                    <div class="service-card-top">
+                        <span class="service-badge">Disponible</span>
+                        <h3>${ service.nom || 'Service' }</h3>
+                    </div>
+
+                    <p class="service-description">
+                        ${ service.description || 'Description non disponible.' }
+                    </p>
+
+                    <div class="service-meta service-meta-page">
+                        <div class="service-meta-box">
+                            <span class="service-meta-label">Durée: </span>
+                            <span class="service-meta-value">${ formatDuration(service.duree) }</span>
+                        </div>
+
+                        <div class="service-meta-box">
+                            <span class="service-meta-label">Prix: </span>
+                            <span class="service-meta-value">${ formatPrice(service.prix) }</span>
+                        </div>
+                    </div>
+
+                    <div class="service-actions">
+                        <button type="button" class="btn btn-primary" @click="goToReservation">
+                            Réserver
+                        </button>
+                        <div v-if="authRedirectMessage" class="auth-message auth-message-error">
+                            ${ authRedirectMessage }
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </div>
+    </section>
+{% endblock %}
+
+{% block vue_app %}
+    <script>
+        const ServicesApp = {
+            delimiters: ['${', '}'],
+            mixins: [BasePublicApp],
+            data() {
+                return {
+                    authRedirectMessage: "",
+                    mobileMenuOpen: false,
+                    services: [],
+                    loadingServices: true,
+                    servicesError: "",
+                    search: ""
+                };
+            },
+            computed: {
+                filteredServices() {
+                    const q = this.search.trim().toLowerCase();
+
+                    if (!q) {
+                        return this.services;
+                    }
+
+                    return this.services.filter(service => {
+                        const nom = String(service.nom || "").toLowerCase();
+                        const description = String(service.description || "").toLowerCase();
+                        const prestataireNom = String(service.prestataire_nom || "").toLowerCase();
+                        const prestatairePrenoms = String(service.prestataire_prenoms || "").toLowerCase();
+
+                        return (
+                            nom.includes(q) ||
+                            description.includes(q) ||
+                            prestataireNom.includes(q) ||
+                            prestatairePrenoms.includes(q)
+                        );
+                    });
+                }
+            },
+            methods: {
+                async fetchServices() {
+                    this.loadingServices = true;
+                    this.servicesError = "";
+
+                    try {
+                        const response = await fetch("/services", {
+                            headers: {
+                                "Accept": "application/json"
+                            }
+                        });
+
+                        if (!response.ok) {
+                            throw new Error("Impossible de charger les services.");
+                        }
+
+                        const payload = await response.json();
+                        this.services = Array.isArray(payload?.data) ? payload.data : [];
+                    } catch (error) {
+                        this.servicesError = error.message || "Erreur lors du chargement des services.";
+                    } finally {
+                        this.loadingServices = false;
+                    }
+                },
+                getAccessToken() {
+                    return localStorage.getItem("access_token") || "";
+                },
+
+                getUserRole() {
+                    return localStorage.getItem("user_role") || "";
+                },
+                formatPrice(value) {
+                    if (value === null || value === undefined || value === "") {
+                        return "Non disponible";
+                    }
+
+                    const numberValue = Number(value);
+                    if (Number.isNaN(numberValue)) {
+                        return String(value);
+                    }
+
+                    return `${numberValue.toFixed(2)} $`;
+                },
+
+                formatDuration(value) {
+                    if (value === null || value === undefined || value === "") {
+                        return "Non disponible";
+                    }
+
+                    const numberValue = Number(value);
+                    if (Number.isNaN(numberValue)) {
+                        return String(value);
+                    }
+
+                    return `${numberValue.toFixed(2)} h`;
+                },
+                redirectToLogin(message) {
+                    this.authRedirectMessage = message;
+
+                    setTimeout(() => {
+                        window.location.href = "{{ url_for('public.login_page') }}";
+                    }, 1800);
+                },
+                goToReservation() {
+                    const accessToken = this.getAccessToken();
+                    const role = this.getUserRole();
+
+                    if (!accessToken) {
+                        this.redirectToLogin("Vous devez être connecté comme client pour réserver.");
+                        return;
+                    }
+
+                    if (role !== "client") {
+                        this.redirectToLogin("Vous devez être connecté comme client pour réserver.");
+                        return;
+                    }
+
+                    window.location.href = "{{ url_for('client_front.new_reservation_page') }}";
+                }
+            },
+            mounted() {
+                this.fetchServices();
+            }
+        };
+
+        Vue.createApp(ServicesApp).mount("#app");
+    </script>
+{% endblock %}

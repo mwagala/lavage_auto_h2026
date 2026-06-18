@@ -1,0 +1,165 @@
+{% extends "base_public.html" %}
+
+{% block title %}Notre équipe | LavageAuto{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container">
+    <div class="section-heading">
+      <span class="section-kicker">Notre équipe</span>
+      <h1 class="section-title">Des prestataires professionnels et évalués</h1>
+      <p class="section-description">
+        Découvrez les prestataires disponibles et choisissez celui qui correspond à vos attentes.
+      </p>
+    </div>
+
+    <div class="services-toolbar" style="margin-bottom: 28px">
+      <input
+        v-model="search"
+        type="text"
+        class="services-search"
+        placeholder="Rechercher un prestataire..."
+      />
+    </div>
+
+    <div v-if="loadingPrestataires" class="section-description">
+      Chargement des prestataires...
+    </div>
+
+    <div v-else-if="prestatairesError" class="section-description">
+      ${ prestatairesError }
+    </div>
+
+    <div v-else-if="filteredPrestataires.length === 0" class="section-description">
+      Aucun prestataire trouvé.
+    </div>
+
+    <div v-else class="team-grid">
+      <article class="team-card" v-for="member in filteredPrestataires" :key="member.id">
+        <div class="team-avatar">
+          ${ getInitials(formatFullName(member.prenoms, member.nom)) }
+        </div>
+
+        <h3 class="team-name">
+          ${ formatFullName(member.prenoms, member.nom) }
+        </h3>
+
+        <p class="team-role">
+          ${ formatLocation(member.adresse_ville, member.adresse_province) }
+        </p>
+
+        <p class="team-rating">
+          Note : ${ formatRating(member.note_moyenne) }
+        </p>
+
+        <div class="service-actions">
+          <a :href="`/prestataires/${member.id}/profil`" class="btn btn-secondary btn-full">Voir le profil</a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block vue_app %}
+<script>
+  const TeamApp = {
+    delimiters: ['${', '}'],
+    mixins: [BasePublicApp],
+    data() {
+      return {
+        mobileMenuOpen: false,
+        prestataires: [],
+        loadingPrestataires: true,
+        prestatairesError: "",
+        search: ""
+      };
+    },
+    computed: {
+      filteredPrestataires() {
+        const q = this.search.trim().toLowerCase();
+
+        if (!q) {
+          return this.prestataires;
+        }
+
+        return this.prestataires.filter(member => {
+          const nom = String(member.nom || "").toLowerCase();
+          const prenoms = String(member.prenoms || "").toLowerCase();
+          const ville = String(member.adresse_ville || "").toLowerCase();
+          const province = String(member.adresse_province || "").toLowerCase();
+
+          return (
+            nom.includes(q) ||
+            prenoms.includes(q) ||
+            ville.includes(q) ||
+            province.includes(q)
+          );
+        });
+      }
+    },
+    methods: {
+      async fetchPrestataires() {
+        this.loadingPrestataires = true;
+        this.prestatairesError = "";
+
+        try {
+          const response = await fetch("/prestataires", {
+            headers: {
+              "Accept": "application/json"
+            }
+          });
+
+          if (!response.ok) {
+            throw new Error("Impossible de charger les prestataires.");
+          }
+
+          const payload = await response.json();
+          this.prestataires = Array.isArray(payload?.data) ? payload.data : [];
+        } catch (error) {
+          this.prestatairesError = error.message || "Erreur lors du chargement des prestataires.";
+        } finally {
+          this.loadingPrestataires = false;
+        }
+      },
+
+      formatFullName(prenoms, nom) {
+        const fullName = `${prenoms || ""} ${nom || ""}`.trim();
+        return fullName || "Prestataire";
+      },
+
+      formatLocation(ville, province) {
+        const parts = [ville, province].filter(Boolean);
+        return parts.length ? parts.join(", ") : "Localisation non disponible";
+      },
+
+      formatRating(value) {
+        if (value === null || value === undefined || value === "") {
+          return "N/A";
+        }
+
+        const numberValue = Number(value);
+        if (Number.isNaN(numberValue)) {
+          return String(value);
+        }
+
+        return `${numberValue.toFixed(1)}/5`;
+      },
+
+      getInitials(fullName) {
+        if (!fullName) {
+          return "PA";
+        }
+
+        const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
+        return parts.slice(0, 2).map(part => part[0].toUpperCase()).join("");
+      }
+    },
+    mounted() {
+      this.fetchPrestataires();
+    }
+  };
+
+  Vue.createApp(TeamApp).mount("#app");
+</script>
+{% endblock %}

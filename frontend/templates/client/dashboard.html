@@ -1,0 +1,1401 @@
+{% extends "base_auth.html" %}
+
+{% block title %}Tableau de bord client | LavageAuto{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/client.css') }}">
+{% endblock %}
+
+{% block content %}
+    <section class="client-dashboard-section">
+        <div class="container">
+            <div v-if="pageError" class="auth-message auth-message-error">
+                ${ pageError }
+            </div>
+
+            <div v-else class="dashboard-shell">
+                <div class="dashboard-hero">
+                    <div>
+                        <span class="section-kicker">Espace client</span>
+                        <h1 class="dashboard-title">Bienvenue dans votre tableau de bord</h1>
+                        <p class="dashboard-subtitle">
+                            Consultez vos réservations, vos factures et gérez votre compte sans quitter cette page.
+                        </p>
+                    </div>
+
+                    <div class="dashboard-actions dashboard-actions-wrap">
+                        <a href="{{ url_for('client_front.new_reservation_page') }}" class="btn btn-primary">
+                            Nouvelle réservation
+                        </a>
+
+                        <button type="button" class="btn btn-secondary" @click="openProfileModal">
+                            Modifier mon profil
+                        </button>
+
+                        <button type="button" class="btn btn-secondary" @click="openPasswordModal">
+                            Changer mon mot de passe
+                        </button>
+                    </div>
+                </div>
+
+                <div v-if="actionError" class="auth-message auth-message-error">
+                    ${ actionError }
+                </div>
+
+                <div v-if="actionMessage" class="auth-message auth-message-success">
+                    ${ actionMessage }
+                </div>
+
+                <div class="dashboard-stats">
+                    <article class="dashboard-stat-card">
+                        <span class="dashboard-stat-label">Réservations à venir</span>
+                        <strong class="dashboard-stat-value">${ upcomingReservations.length }</strong>
+                    </article>
+
+                    <article class="dashboard-stat-card">
+                        <span class="dashboard-stat-label">Réservations passées</span>
+                        <strong class="dashboard-stat-value">${ pastReservations.length }</strong>
+                    </article>
+
+                    <article class="dashboard-stat-card">
+                        <span class="dashboard-stat-label">10 dernières réservations</span>
+                        <strong class="dashboard-stat-value">${ allReservations.length }</strong>
+                    </article>
+
+                    <article class="dashboard-stat-card">
+                        <span class="dashboard-stat-label">Factures</span>
+                        <strong class="dashboard-stat-value">${ factures.length }</strong>
+                    </article>
+                </div>
+
+                <section class="dashboard-section-card">
+                    <div class="dashboard-section-header">
+                        <div>
+                            <span class="section-kicker">Facturation</span>
+                            <h2 class="section-title section-title-small">Mes factures</h2>
+                        </div>
+                    </div>
+
+                    <div v-if="loadingFactures" class="section-description">
+                        Chargement des factures...
+                    </div>
+
+                    <div v-else-if="facturesError" class="auth-message auth-message-error">
+                        ${ facturesError }
+                    </div>
+
+                    <div v-else-if="factures.length === 0" class="empty-state-card">
+                        <h3>Aucune facture</h3>
+                        <p>Vos factures apparaîtront ici après vos réservations.</p>
+                    </div>
+
+                    <div v-else class="dashboard-reservations-list">
+                        <article class="dashboard-reservation-card" v-for="facture in factures" :key="getFactureId(facture)">
+                            <div class="dashboard-reservation-top">
+                                <div>
+                                    <h3 class="dashboard-reservation-title">Facture #${ getFactureId(facture) }</h3>
+                                    <p class="dashboard-reservation-meta">
+                                        Réservation #${ facture.reservation_id || 'N/A' }
+                                    </p>
+                                </div>
+
+                                <span class="dashboard-status-badge dashboard-status-badge-muted">
+                                    ${ formatMoney(facture.total) }
+                                </span>
+                            </div>
+
+                            <div class="dashboard-reservation-body">
+                                <p><strong>Sous-total :</strong> ${ formatMoney(facture.sous_total) }</p>
+                                <p><strong>Total :</strong> ${ formatMoney(facture.total) }</p>
+
+                                <div class="reservation-actions">
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary"
+                                        @click="openFactureDetailModal(getFactureId(facture))"
+                                    >
+                                        Voir le détail
+                                    </button>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="dashboard-section-card">
+                    <div class="dashboard-section-header">
+                        <div>
+                            <span class="section-kicker">À venir</span>
+                            <h2 class="section-title section-title-small">Prochaines réservations</h2>
+                        </div>
+                    </div>
+
+                    <div v-if="loadingUpcoming" class="section-description">
+                        Chargement des réservations à venir...
+                    </div>
+
+                    <div v-else-if="upcomingError" class="auth-message auth-message-error">
+                        ${ upcomingError }
+                    </div>
+
+                    <div v-else-if="upcomingReservations.length === 0" class="empty-state-card">
+                        <h3>Aucune réservation à venir</h3>
+                        <p>Vous n’avez pas encore de réservation planifiée.</p>
+                    </div>
+
+                    <div v-else class="dashboard-reservations-list">
+                        <article class="dashboard-reservation-card" v-for="reservation in upcomingReservations" :key="reservation.id">
+                            <div class="dashboard-reservation-top">
+                                <div>
+                                    <h3 class="dashboard-reservation-title">Réservation #${ reservation.id }</h3>
+                                    <p class="dashboard-reservation-meta">
+                                        ${ formatReservationDate(reservation.date) } —
+                                        ${ reservation.heure_debut || 'Heure non disponible' }
+                                        <span v-if="reservation.heure_fin"> à ${ reservation.heure_fin }</span>
+                                    </p>
+                                </div>
+
+                                <span class="dashboard-status-badge">
+                                    ${ reservation.statut || 'Planifiée' }
+                                </span>
+                            </div>
+
+                            <div class="dashboard-reservation-body">
+                                <p>
+                                    <strong>Prestataire :</strong>
+                                    ${ formatPrestataireName(reservation.prestataire_prenoms, reservation.prestataire_nom) }
+                                </p>
+
+                                <div v-if="commentairesByReservation[reservation.id]" class="reservation-comment-box">
+                                    <p><strong>Commentaire :</strong> ${ commentairesByReservation[reservation.id].texte || 'Sans texte' }</p>
+                                    <p><strong>Note :</strong> ${ commentairesByReservation[reservation.id].note ?? 'N/A' } / 5</p>
+                                </div>
+
+                                <div v-else class="reservation-comment-box">
+                                    <p><strong>Commentaire :</strong> Aucun commentaire</p>
+                                </div>
+
+                                <div class="reservation-actions">
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary"
+                                        @click="openReservationDetailModal(reservation.id)"
+                                    >
+                                        Voir le détail
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary"
+                                        @click="openCommentaireModal(reservation.id)"
+                                    >
+                                        ${ commentairesByReservation[reservation.id] ? 'Modifier le commentaire' : 'Ajouter un commentaire' }
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        class="btn btn-danger"
+                                        @click="cancelReservation(reservation.id)"
+                                    >
+                                        Annuler la réservation
+                                    </button>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="dashboard-section-card">
+                    <div class="dashboard-section-header">
+                        <div>
+                            <span class="section-kicker">Historique</span>
+                            <h2 class="section-title section-title-small">Historique des réservations</h2>
+                        </div>
+                    </div>
+
+                    <div v-if="loadingPast" class="section-description">
+                        Chargement de l'historique des réservations...
+                    </div>
+
+                    <div v-else-if="pastError" class="auth-message auth-message-error">
+                        ${ pastError }
+                    </div>
+
+                    <div v-else-if="pastReservations.length === 0" class="empty-state-card">
+                        <h3>Aucune réservation dans l'historique</h3>
+                        <p>Votre historique de réservation apparaîtra ici.</p>
+                    </div>
+
+                    <div v-else class="dashboard-reservations-list">
+                        <article class="dashboard-reservation-card" v-for="reservation in pastReservations" :key="reservation.id">
+                            <div class="dashboard-reservation-top">
+                                <div>
+                                    <h3 class="dashboard-reservation-title">Réservation #${ reservation.id }</h3>
+                                    <p class="dashboard-reservation-meta">
+                                        ${ formatReservationDate(reservation.date) } —
+                                        ${ reservation.heure_debut || 'Heure non disponible' }
+                                    </p>
+                                </div>
+
+                                <span class="dashboard-status-badge dashboard-status-badge-muted">
+                                    ${ reservation.statut || 'Terminée' }
+                                </span>
+                            </div>
+
+                            <div class="dashboard-reservation-body">
+                                <p>
+                                    <strong>Prestataire :</strong>
+                                    ${ formatPrestataireName(reservation.prestataire_prenoms, reservation.prestataire_nom) }
+                                </p>
+
+                                <div v-if="commentairesByReservation[reservation.id]" class="reservation-comment-box">
+                                    <p><strong>Commentaire :</strong> ${ commentairesByReservation[reservation.id].texte || 'Sans texte' }</p>
+                                    <p><strong>Note :</strong> ${ commentairesByReservation[reservation.id].note ?? 'N/A' } / 5</p>
+                                </div>
+
+                                <div v-else class="reservation-comment-box">
+                                    <p><strong>Commentaire :</strong> Aucun commentaire</p>
+                                </div>
+
+                                <div class="reservation-actions">
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary"
+                                        @click="openReservationDetailModal(reservation.id)"
+                                    >
+                                        Voir le détail
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary"
+                                        @click="openCommentaireModal(reservation.id)"
+                                    >
+                                        ${ commentairesByReservation[reservation.id] ? 'Modifier le commentaire' : 'Ajouter un commentaire' }
+                                    </button>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="dashboard-section-card">
+                    <div class="dashboard-section-header">
+                        <div>
+                            <span class="section-kicker">Vue globale</span>
+                            <h2 class="section-title section-title-small">Mes 10 dernières réservations</h2>
+                        </div>
+                    </div>
+
+                    <div v-if="loadingAll" class="section-description">
+                        Chargement des 10 dernières réservations...
+                    </div>
+
+                    <div v-else-if="allError" class="auth-message auth-message-error">
+                        ${ allError }
+                    </div>
+
+                    <div v-else-if="allReservations.length === 0" class="empty-state-card">
+                        <h3>Aucune réservation</h3>
+                        <p>Vos réservations apparaîtront ici.</p>
+                    </div>
+
+                    <div v-else class="dashboard-reservations-list">
+                        <article class="dashboard-reservation-card" v-for="reservation in allReservations" :key="`all-${reservation.id}`">
+                            <div class="dashboard-reservation-top">
+                                <div>
+                                    <h3 class="dashboard-reservation-title">Réservation #${ reservation.id }</h3>
+                                    <p class="dashboard-reservation-meta">
+                                        ${ formatReservationDate(reservation.date) } —
+                                        ${ reservation.heure_debut || 'Heure non disponible' }
+                                    </p>
+                                </div>
+
+                                <span class="dashboard-status-badge">
+                                    ${ reservation.statut || 'N/A' }
+                                </span>
+                            </div>
+
+                            <div class="dashboard-reservation-body">
+                                <p>
+                                    <strong>Prestataire :</strong>
+                                    ${ formatPrestataireName(reservation.prestataire_prenoms, reservation.prestataire_nom) }
+                                </p>
+
+                                <div class="reservation-actions">
+                                    <button
+                                        type="button"
+                                        class="btn btn-secondary"
+                                        @click="openReservationDetailModal(reservation.id)"
+                                    >
+                                        Voir le détail
+                                    </button>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div v-if="showProfileModal" class="modal-backdrop" @click.self="closeProfileModal">
+            <div class="modal-card">
+                <div class="modal-header">
+                    <div>
+                        <h3 class="modal-title">Modifier mon profil</h3>
+                        <p class="modal-subtitle">Mettez à jour vos informations personnelles.</p>
+                    </div>
+                    <button type="button" class="modal-close" @click="closeProfileModal">&times;</button>
+                </div>
+
+                <form class="auth-form" @submit.prevent="submitProfileUpdate">
+                    <div class="auth-grid">
+                        <div class="form-group">
+                            <label for="profile_nom">Nom</label>
+                            <input id="profile_nom" v-model.trim="profileForm.nom" type="text" class="auth-input" required />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="profile_prenoms">Prénoms</label>
+                            <input id="profile_prenoms" v-model.trim="profileForm.prenoms" type="text" class="auth-input" required />
+                        </div>
+                    </div>
+
+                    <div class="auth-grid">
+                        <div class="form-group">
+                            <label for="profile_date_naissance">Date de naissance</label>
+                            <input id="profile_date_naissance" v-model="profileForm.date_naissance" type="date" class="auth-input" required />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="profile_courriel">Courriel</label>
+                            <input id="profile_courriel" v-model.trim="profileForm.courriel" type="email" class="auth-input" required />
+                        </div>
+                    </div>
+
+                    <div class="auth-grid">
+                        <div class="form-group">
+                            <label for="profile_telephone">Téléphone</label>
+                            <input id="profile_telephone" v-model.trim="profileForm.telephone" type="text" class="auth-input" required />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="profile_mode_paiement">Mode de paiement</label>
+                            <select id="profile_mode_paiement" v-model="profileForm.mode_paiement" class="auth-input" required>
+                                <option value="Comptant">Comptant</option>
+                                <option value="Carte Credit">Carte Credit</option>
+                                <option value="Carte debit">Carte debit</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="auth-grid auth-grid-address">
+                        <div class="form-group">
+                            <label for="profile_adresse_numero">Numéro</label>
+                            <input id="profile_adresse_numero" v-model.trim="profileForm.adresse_numero" type="text" class="auth-input" required />
+                        </div>
+
+                        <div class="form-group auth-grid-span-2">
+                            <label for="profile_adresse_rue">Rue</label>
+                            <input id="profile_adresse_rue" v-model.trim="profileForm.adresse_rue" type="text" class="auth-input" required />
+                        </div>
+                    </div>
+
+                    <div class="auth-grid auth-grid-address">
+                        <div class="form-group">
+                            <label for="profile_adresse_ville">Ville</label>
+                            <input id="profile_adresse_ville" v-model.trim="profileForm.adresse_ville" type="text" class="auth-input" required />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="profile_adresse_province">Province</label>
+                            <input id="profile_adresse_province" v-model.trim="profileForm.adresse_province" type="text" class="auth-input" required />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="profile_adresse_code_postal">Code postal</label>
+                            <input id="profile_adresse_code_postal" v-model.trim="profileForm.adresse_code_postal" type="text" class="auth-input" required />
+                        </div>
+                    </div>
+
+                    <div v-if="profileError" class="auth-message auth-message-error">
+                        ${ profileError }
+                    </div>
+
+                    <div v-if="profileSuccess" class="auth-message auth-message-success">
+                        ${ profileSuccess }
+                    </div>
+
+                    <div class="reservation-actions">
+                        <button type="button" class="btn btn-secondary" @click="closeProfileModal">Fermer</button>
+                        <button type="submit" class="btn btn-primary" :disabled="profileSaving">
+                            <span v-if="profileSaving">Enregistrement...</span>
+                            <span v-else>Enregistrer</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div v-if="showPasswordModal" class="modal-backdrop" @click.self="closePasswordModal">
+            <div class="modal-card modal-card-small">
+                <div class="modal-header">
+                    <div>
+                        <h3 class="modal-title">Changer mon mot de passe</h3>
+                        <p class="modal-subtitle">Entrez votre mot de passe actuel puis le nouveau.</p>
+                    </div>
+                    <button type="button" class="modal-close" @click="closePasswordModal">&times;</button>
+                </div>
+
+                <form class="auth-form" @submit.prevent="submitPasswordChange">
+                    <div class="form-group">
+                        <label for="ancien_mot_de_passe">Mot de passe actuel</label>
+                        <input id="ancien_mot_de_passe" v-model="passwordForm.ancien_mot_de_passe" type="password" class="auth-input" required />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="nouveau_mot_de_passe">Nouveau mot de passe</label>
+                        <input id="nouveau_mot_de_passe" v-model="passwordForm.nouveau_mot_de_passe" type="password" class="auth-input" minlength="15" maxlength="128" required />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirm_password">Confirmer le nouveau mot de passe</label>
+                        <input id="confirm_password" v-model="passwordForm.confirm_password" type="password" class="auth-input" minlength="15" maxlength="128" required />
+                    </div>
+
+                    <div v-if="passwordError" class="auth-message auth-message-error">
+                        ${ passwordError }
+                    </div>
+
+                    <div v-if="passwordSuccess" class="auth-message auth-message-success">
+                        ${ passwordSuccess }
+                    </div>
+
+                    <div class="reservation-actions">
+                        <button type="button" class="btn btn-secondary" @click="closePasswordModal">Fermer</button>
+                        <button type="submit" class="btn btn-primary" :disabled="passwordSaving">
+                            <span v-if="passwordSaving">Enregistrement...</span>
+                            <span v-else>Modifier le mot de passe</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div v-if="showCommentaireModal" class="modal-backdrop" @click.self="closeCommentaireModal">
+            <div class="modal-card modal-card-small">
+                <div class="modal-header">
+                    <div>
+                        <h3 class="modal-title">
+                            ${ commentaireForm.id ? 'Modifier le commentaire' : 'Ajouter un commentaire' }
+                        </h3>
+                        <p class="modal-subtitle">
+                            Réservation #${ commentaireReservationId || 'N/A' }
+                        </p>
+                    </div>
+                    <button type="button" class="modal-close" @click="closeCommentaireModal">&times;</button>
+                </div>
+
+                <form class="auth-form" @submit.prevent="submitCommentaire">
+                    <div class="form-group">
+                        <label for="commentaire_note">Note</label>
+                        <select id="commentaire_note" v-model="commentaireForm.note" class="auth-input" required>
+                            <option value="">Sélectionnez une note</option>
+                            <option :value="1">1</option>
+                            <option :value="2">2</option>
+                            <option :value="3">3</option>
+                            <option :value="4">4</option>
+                            <option :value="5">5</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="commentaire_texte">Commentaire</label>
+                        <textarea
+                            id="commentaire_texte"
+                            v-model.trim="commentaireForm.texte"
+                            class="auth-input"
+                            rows="5"
+                            placeholder="Partagez votre expérience..."
+                            required
+                        ></textarea>
+                    </div>
+
+                    <div v-if="commentaireError" class="auth-message auth-message-error">
+                        ${ commentaireError }
+                    </div>
+
+                    <div v-if="commentaireSuccess" class="auth-message auth-message-success">
+                        ${ commentaireSuccess }
+                    </div>
+
+                    <div class="reservation-actions">
+                        <button type="button" class="btn btn-secondary" @click="closeCommentaireModal">Fermer</button>
+                        <button type="submit" class="btn btn-primary" :disabled="commentaireSaving">
+                            <span v-if="commentaireSaving">Enregistrement...</span>
+                            <span v-else>${ commentaireForm.id ? 'Mettre à jour' : 'Publier le commentaire' }</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div v-if="showReservationDetailModal" class="modal-backdrop" @click.self="closeReservationDetailModal">
+            <div class="modal-card">
+                <div class="modal-header">
+                    <div>
+                        <h3 class="modal-title">Détail de la réservation</h3>
+                        <p class="modal-subtitle">Informations détaillées sur votre réservation.</p>
+                    </div>
+                    <button type="button" class="modal-close" @click="closeReservationDetailModal">&times;</button>
+                </div>
+
+                <div v-if="reservationDetailLoading" class="section-description">
+                    Chargement du détail...
+                </div>
+
+                <div v-else-if="reservationDetailError" class="auth-message auth-message-error">
+                    ${ reservationDetailError }
+                </div>
+
+                <div v-else-if="selectedReservationDetail" class="dashboard-inline-meta">
+                    <p><strong>Réservation #:</strong> ${ selectedReservationDetail.reservation.id }</p>
+                    <p><strong>Date :</strong> ${ formatReservationDate(selectedReservationDetail.reservation.date) }</p>
+                    <p><strong>Heure début :</strong> ${ selectedReservationDetail.reservation.heure_debut || 'N/A' }</p>
+                    <p><strong>Heure fin :</strong> ${ selectedReservationDetail.reservation.heure_fin || 'N/A' }</p>
+                    <p><strong>Statut :</strong> ${ selectedReservationDetail.reservation.statut || 'N/A' }</p>
+                    <p>
+                        <strong>Prestataire :</strong>
+                        ${ formatPrestataireName(selectedReservationDetail.reservation.prestataire_prenoms, selectedReservationDetail.reservation.prestataire_nom) }
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showFactureDetailModal" class="modal-backdrop" @click.self="closeFactureDetailModal">
+            <div class="modal-card modal-card-small">
+                <div class="modal-header">
+                    <div>
+                        <h3 class="modal-title">Détail de la facture</h3>
+                        <p class="modal-subtitle">Informations détaillées sur votre facture.</p>
+                    </div>
+                    <button type="button" class="modal-close" @click="closeFactureDetailModal">&times;</button>
+                </div>
+
+                <div v-if="factureDetailLoading" class="section-description">
+                    Chargement du détail...
+                </div>
+
+                <div v-else-if="factureDetailError" class="auth-message auth-message-error">
+                    ${ factureDetailError }
+                </div>
+
+                <div v-else-if="selectedFactureDetail" class="dashboard-inline-meta">
+                    <p><strong>Facture #:</strong> ${ selectedFactureDetail.id }</p>
+                    <p><strong>Réservation #:</strong> ${ selectedFactureDetail.reservation_id || 'N/A' }</p>
+                    <p><strong>Sous-total :</strong> ${ formatMoney(selectedFactureDetail.sous_total) }</p>
+                    <p><strong>Total :</strong> ${ formatMoney(selectedFactureDetail.total) }</p>
+                </div>
+            </div>
+        </div>
+    </section>
+{% endblock %}
+
+{% block vue_app %}
+    <script>
+        const ClientDashboardApp = {
+            delimiters: ['${', '}'],
+            mixins: [BasePublicApp],
+            data() {
+                return {
+                    pageError: "",
+                    actionMessage: "",
+                    actionError: "",
+
+                    loadingUpcoming: false,
+                    loadingPast: false,
+                    loadingAll: false,
+                    loadingFactures: false,
+
+                    upcomingError: "",
+                    pastError: "",
+                    allError: "",
+                    facturesError: "",
+
+                    upcomingReservations: [],
+                    pastReservations: [],
+                    allReservations: [],
+                    factures: [],
+                    commentairesByReservation: {},
+
+                    showProfileModal: false,
+                    profileSaving: false,
+                    profileError: "",
+                    profileSuccess: "",
+                    profileForm: {
+                        nom: "",
+                        prenoms: "",
+                        date_naissance: "",
+                        courriel: "",
+                        telephone: "",
+                        mode_paiement: "Comptant",
+                        adresse_numero: "",
+                        adresse_rue: "",
+                        adresse_ville: "",
+                        adresse_province: "",
+                        adresse_code_postal: ""
+                    },
+
+                    showPasswordModal: false,
+                    passwordSaving: false,
+                    passwordError: "",
+                    passwordSuccess: "",
+                    passwordForm: {
+                        current_password: "",
+                        nouveau_mot_de_passe: "",
+                        confirm_password: ""
+                    },
+
+                    showCommentaireModal: false,
+                    commentaireSaving: false,
+                    commentaireError: "",
+                    commentaireSuccess: "",
+                    commentaireReservationId: null,
+                    commentaireForm: {
+                        id: null,
+                        note: "",
+                        texte: ""
+                    },
+
+                    showReservationDetailModal: false,
+                    reservationDetailLoading: false,
+                    reservationDetailError: "",
+                    selectedReservationDetail: null,
+
+                    showFactureDetailModal: false,
+                    factureDetailLoading: false,
+                    factureDetailError: "",
+                    selectedFactureDetail: null
+                };
+            },
+            methods: {
+                getAccessToken() {
+                    return localStorage.getItem("access_token") || "";
+                },
+
+                getUserRole() {
+                    return localStorage.getItem("user_role") || "";
+                },
+
+                redirectToLogin(message) {
+                    this.pageError = message;
+
+                    setTimeout(() => {
+                        window.location.href = "{{ url_for('public.login_page') }}";
+                    }, 1400);
+                },
+
+                async safeReadJson(response) {
+                    const contentType = response.headers.get("content-type") || "";
+                    if (!contentType.includes("application/json")) {
+                        return null;
+                    }
+
+                    try {
+                        return await response.json();
+                    } catch {
+                        return null;
+                    }
+                },
+
+                getErrorMessage(payload, fallbackMessage) {
+                    if (payload && typeof payload.message === "string" && payload.message.trim()) {
+                        return payload.message;
+                    }
+
+                    if (payload && typeof payload.error === "string" && payload.error.trim()) {
+                        return payload.error;
+                    }
+
+                    return fallbackMessage;
+                },
+
+                getAuthHeaders(withJson = false) {
+                    return {
+                        ...(withJson ? { "Content-Type": "application/json" } : {}),
+                        "Accept": "application/json",
+                        "Authorization": `Bearer ${this.getAccessToken()}`
+                    };
+                },
+
+                formatReservationDate(value) {
+                    if (!value) return "Date non disponible";
+
+                    const date = new Date(value);
+                    if (Number.isNaN(date.getTime())) return value;
+
+                    return date.toLocaleDateString("fr-CA", {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric"
+                    });
+                },
+
+                formatPrestataireName(prenoms, nom) {
+                    const fullName = `${prenoms || ""} ${nom || ""}`.trim();
+                    return fullName || "Prestataire non disponible";
+                },
+
+                formatMoney(value) {
+                    const numeric = Number(value);
+                    if (Number.isNaN(numeric)) return value ?? "0,00 $";
+
+                    return numeric.toLocaleString("fr-CA", {
+                        style: "currency",
+                        currency: "CAD"
+                    });
+                },
+
+                getFactureId(facture) {
+                    return facture?.id || facture?.facture_id || null;
+                },
+
+                formatDateForInput(value) {
+                    if (!value) return "";
+
+                    if (typeof value === "string") {
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                            return value;
+                        }
+
+                        const parsed = new Date(value);
+                        if (!Number.isNaN(parsed.getTime())) {
+                            return parsed.toISOString().split("T")[0];
+                        }
+                    }
+
+                    return "";
+                },
+
+                validateProfileForm() {
+                    const requiredFields = [
+                        ["nom", "Veuillez entrer votre nom."],
+                        ["prenoms", "Veuillez entrer vos prénoms."],
+                        ["date_naissance", "Veuillez entrer votre date de naissance."],
+                        ["courriel", "Veuillez entrer votre courriel."],
+                        ["telephone", "Veuillez entrer votre téléphone."],
+                        ["mode_paiement", "Veuillez sélectionner un mode de paiement."],
+                        ["adresse_numero", "Veuillez entrer votre numéro d’adresse."],
+                        ["adresse_rue", "Veuillez entrer votre rue."],
+                        ["adresse_ville", "Veuillez entrer votre ville."],
+                        ["adresse_province", "Veuillez entrer votre province."],
+                        ["adresse_code_postal", "Veuillez entrer votre code postal."]
+                    ];
+
+                    for (const [field, message] of requiredFields) {
+                        if (!this.profileForm[field] || !String(this.profileForm[field]).trim()) {
+                            return message;
+                        }
+                    }
+
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (!emailRegex.test(this.profileForm.courriel.trim())) {
+                        return "Veuillez entrer une adresse courriel valide.";
+                    }
+
+                    const codePostalRegex = /^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/;
+                    if (!codePostalRegex.test(this.profileForm.adresse_code_postal.trim())) {
+                        return "Le code postal doit respecter le format A1A 1A1.";
+                    }
+
+                    return "";
+                },
+
+                hydrateProfileForm(clientData) {
+                    this.profileForm.nom = clientData.nom || "";
+                    this.profileForm.prenoms = clientData.prenoms || "";
+                    this.profileForm.date_naissance = this.formatDateForInput(clientData.date_naissance);
+                    this.profileForm.courriel = clientData.courriel || "";
+                    this.profileForm.telephone = clientData.telephone || "";
+                    this.profileForm.mode_paiement = clientData.mode_paiement || "Comptant";
+                    this.profileForm.adresse_numero = clientData.adresse_numero || "";
+                    this.profileForm.adresse_rue = clientData.adresse_rue || "";
+                    this.profileForm.adresse_ville = clientData.adresse_ville || "";
+                    this.profileForm.adresse_province = clientData.adresse_province || "";
+                    this.profileForm.adresse_code_postal = clientData.adresse_code_postal || "";
+                },
+
+                async fetchProfile() {
+                    const response = await fetch("/clients/me", {
+                        headers: this.getAuthHeaders()
+                    });
+
+                    const payload = await this.safeReadJson(response);
+
+                    if (!response.ok || !payload || payload.success !== true) {
+                        throw new Error(
+                            this.getErrorMessage(payload, "Impossible de charger votre profil.")
+                        );
+                    }
+
+                    const clientData = payload.data || {};
+                    this.hydrateProfileForm(clientData);
+
+                    localStorage.setItem("user_profile", JSON.stringify(clientData));
+                    this.hydrateAuthState();
+                },
+
+                openProfileModal() {
+                    this.profileError = "";
+                    this.profileSuccess = "";
+                    this.fetchProfile()
+                        .then(() => {
+                            this.showProfileModal = true;
+                        })
+                        .catch((error) => {
+                            this.actionError = error.message || "Impossible d’ouvrir le profil.";
+                        });
+                },
+
+                closeProfileModal() {
+                    this.showProfileModal = false;
+                    this.profileError = "";
+                    this.profileSuccess = "";
+                },
+
+                async submitProfileUpdate() {
+                    this.profileError = "";
+                    this.profileSuccess = "";
+
+                    const validationError = this.validateProfileForm();
+                    if (validationError) {
+                        this.profileError = validationError;
+                        return;
+                    }
+
+                    this.profileSaving = true;
+
+                    try {
+                        const response = await fetch("/clients/me", {
+                            method: "PUT",
+                            headers: this.getAuthHeaders(true),
+                            body: JSON.stringify({
+                                nom: this.profileForm.nom.trim(),
+                                prenoms: this.profileForm.prenoms.trim(),
+                                date_naissance: this.profileForm.date_naissance,
+                                courriel: this.profileForm.courriel.trim(),
+                                telephone: this.profileForm.telephone.trim(),
+                                mode_paiement: this.profileForm.mode_paiement,
+                                adresse_numero: this.profileForm.adresse_numero.trim(),
+                                adresse_rue: this.profileForm.adresse_rue.trim(),
+                                adresse_ville: this.profileForm.adresse_ville.trim(),
+                                adresse_province: this.profileForm.adresse_province.trim(),
+                                adresse_code_postal: this.profileForm.adresse_code_postal.trim()
+                            })
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de mettre à jour votre profil.")
+                            );
+                        }
+
+                        const updatedProfile = payload.data || { ...this.profileForm };
+                        localStorage.setItem("user_profile", JSON.stringify(updatedProfile));
+                        this.hydrateAuthState();
+
+                        this.profileSuccess = "Profil mis à jour avec succès.";
+                        this.actionMessage = "Profil mis à jour avec succès.";
+                    } catch (error) {
+                        this.profileError = error.message || "Erreur lors de la mise à jour du profil.";
+                    } finally {
+                        this.profileSaving = false;
+                    }
+                },
+
+                openPasswordModal() {
+                    this.passwordError = "";
+                    this.passwordSuccess = "";
+                    this.passwordForm = {
+                        ancien_mot_de_passe: "",
+                        nouveau_mot_de_passe: "",
+                        confirm_password: ""
+                    };
+                    this.showPasswordModal = true;
+                },
+
+                closePasswordModal() {
+                    this.showPasswordModal = false;
+                    this.passwordError = "";
+                    this.passwordSuccess = "";
+                },
+
+                validatePasswordForm() {
+                    if (!this.passwordForm.ancien_mot_de_passe.trim()) {
+                        return "Veuillez entrer votre mot de passe actuel.";
+                    }
+
+                    if (!this.passwordForm.nouveau_mot_de_passe.trim()) {
+                        return "Veuillez entrer un nouveau mot de passe.";
+                    }
+
+                    const password = this.passwordForm.nouveau_mot_de_passe;
+                    const normalizedPassword = password.replace(/[\s_\-.'"`]+/g, "").toLowerCase();
+                    const weakPasswords = [
+                        "password",
+                        "password123",
+                        "passwordpassword",
+                        "password123password",
+                        "motdepasse",
+                        "motdepasse123",
+                        "motdepassemotdepasse",
+                        "admin",
+                        "admin123",
+                        "qwerty",
+                        "qwertyqwerty",
+                        "azerty",
+                        "azertyazerty",
+                        "123456789",
+                        "1234567890",
+                        "lavageauto",
+                        "lavageauto123",
+                        "lavageautolavageauto"
+                    ];
+                    const weakPasswordRoots = ["password", "motdepasse", "admin", "qwerty", "azerty", "lavageauto"];
+
+                    if (password.length < 15) {
+                        return "Le nouveau mot de passe doit contenir au moins 15 caractères.";
+                    }
+
+                    if (password.length > 128) {
+                        return "Le nouveau mot de passe ne doit pas dépasser 128 caractères.";
+                    }
+
+                    if (/[\u0000-\u001F\u007F]/.test(password)) {
+                        return "Le nouveau mot de passe ne doit pas contenir de caractères de contrôle.";
+                    }
+
+                    if (!normalizedPassword || weakPasswords.includes(normalizedPassword) || weakPasswordRoots.some(root => new RegExp(`^${root}\\d*$`).test(normalizedPassword))) {
+                        return "Ce mot de passe est trop facile à deviner.";
+                    }
+
+                    if (this.passwordForm.nouveau_mot_de_passe !== this.passwordForm.confirm_password) {
+                        return "La confirmation du nouveau mot de passe ne correspond pas.";
+                    }
+
+                    return "";
+                },
+
+                async submitPasswordChange() {
+                    this.passwordError = "";
+                    this.passwordSuccess = "";
+
+                    const validationError = this.validatePasswordForm();
+                    if (validationError) {
+                        this.passwordError = validationError;
+                        return;
+                    }
+
+                    this.passwordSaving = true;
+
+                    try {
+                        const response = await fetch("/clients/me/change-password", {
+                            method: "PUT",
+                            headers: this.getAuthHeaders(true),
+                            body: JSON.stringify({
+                                ancien_mot_de_passe: this.passwordForm.ancien_mot_de_passe,
+                                nouveau_mot_de_passe: this.passwordForm.nouveau_mot_de_passe,
+                                confirm_password: this.passwordForm.confirm_password
+                            })
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de modifier le mot de passe.")
+                            );
+                        }
+
+                        this.passwordSuccess = "Mot de passe modifié avec succès.";
+                        this.actionMessage = "Mot de passe modifié avec succès.";
+
+                        this.passwordForm = {
+                            ancien_mot_de_passe: "",
+                            nouveau_mot_de_passe: "",
+                            confirm_password: ""
+                        };
+                    } catch (error) {
+                        this.passwordError = error.message || "Erreur lors de la modification du mot de passe.";
+                    } finally {
+                        this.passwordSaving = false;
+                    }
+                },
+
+                async fetchUpcomingReservations() {
+                    this.loadingUpcoming = true;
+                    this.upcomingError = "";
+
+                    try {
+                        const response = await fetch("/clients/me/reservations/upcoming", {
+                            headers: this.getAuthHeaders()
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de charger les réservations à venir.")
+                            );
+                        }
+
+                        this.upcomingReservations = Array.isArray(payload.data) ? payload.data : [];
+                    } catch (error) {
+                        this.upcomingError = error.message || "Erreur lors du chargement des réservations à venir.";
+                    } finally {
+                        this.loadingUpcoming = false;
+                    }
+                },
+
+                async fetchPastReservations() {
+                    this.loadingPast = true;
+                    this.pastError = "";
+
+                    try {
+                        const response = await fetch("/clients/me/reservations/past", {
+                            headers: this.getAuthHeaders()
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de charger les réservations passées.")
+                            );
+                        }
+
+                        this.pastReservations = Array.isArray(payload.data) ? payload.data : [];
+                    } catch (error) {
+                        this.pastError = error.message || "Erreur lors du chargement des réservations passées.";
+                    } finally {
+                        this.loadingPast = false;
+                    }
+                },
+
+                async fetchAllReservations() {
+                    this.loadingAll = true;
+                    this.allError = "";
+
+                    try {
+                        const response = await fetch("/clients/me/reservations", {
+                            headers: this.getAuthHeaders()
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de charger les 10 dernières réservations.")
+                            );
+                        }
+
+                        this.allReservations = Array.isArray(payload.data) ? payload.data : [];
+                    } catch (error) {
+                        this.allError = error.message || "Erreur lors du chargement des 10 dernières réservations.";
+                    } finally {
+                        this.loadingAll = false;
+                    }
+                },
+
+                async fetchFactures() {
+                    this.loadingFactures = true;
+                    this.facturesError = "";
+
+                    try {
+                        const response = await fetch("/clients/me/factures", {
+                            headers: this.getAuthHeaders()
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de charger les factures.")
+                            );
+                        }
+
+                        this.factures = Array.isArray(payload.data) ? payload.data : [];
+                    } catch (error) {
+                        this.facturesError = error.message || "Erreur lors du chargement des factures.";
+                    } finally {
+                        this.loadingFactures = false;
+                    }
+                },
+
+                async fetchCommentaireForReservation(reservationId) {
+                    try {
+                        const response = await fetch(`/clients/me/reservations/${reservationId}/commentaire`, {
+                            headers: this.getAuthHeaders()
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            this.commentairesByReservation[reservationId] = null;
+                            return;
+                        }
+
+                        this.commentairesByReservation[reservationId] = payload.data || null;
+                    } catch {
+                        this.commentairesByReservation[reservationId] = null;
+                    }
+                },
+
+                async fetchCommentairesForReservations(reservations) {
+                    const seen = new Set();
+                    const tasks = [];
+
+                    for (const reservation of reservations) {
+                        if (!reservation || !reservation.id || seen.has(reservation.id)) continue;
+                        seen.add(reservation.id);
+                        tasks.push(this.fetchCommentaireForReservation(reservation.id));
+                    }
+
+                    await Promise.all(tasks);
+                },
+
+                openCommentaireModal(reservationId) {
+                    this.commentaireError = "";
+                    this.commentaireSuccess = "";
+                    this.commentaireReservationId = reservationId;
+
+                    const existing = this.commentairesByReservation[reservationId];
+
+                    this.commentaireForm = {
+                        id: existing?.id || null,
+                        note: existing?.note ?? "",
+                        texte: existing?.texte || ""
+                    };
+
+                    this.showCommentaireModal = true;
+                },
+
+                closeCommentaireModal() {
+                    this.showCommentaireModal = false;
+                    this.commentaireSaving = false;
+                    this.commentaireError = "";
+                    this.commentaireSuccess = "";
+                    this.commentaireReservationId = null;
+                    this.commentaireForm = {
+                        id: null,
+                        note: "",
+                        texte: ""
+                    };
+                },
+
+                validateCommentaireForm() {
+                    const note = Number(this.commentaireForm.note);
+
+                    if (!note || note < 1 || note > 5) {
+                        return "Veuillez sélectionner une note entre 1 et 5.";
+                    }
+
+                    if (!this.commentaireForm.texte || !this.commentaireForm.texte.trim()) {
+                        return "Veuillez entrer un commentaire.";
+                    }
+
+                    return "";
+                },
+
+                async submitCommentaire() {
+                    this.commentaireError = "";
+                    this.commentaireSuccess = "";
+
+                    const validationError = this.validateCommentaireForm();
+                    if (validationError) {
+                        this.commentaireError = validationError;
+                        return;
+                    }
+
+                    this.commentaireSaving = true;
+
+                    try {
+                        const isUpdate = !!this.commentaireForm.id;
+                        const method = isUpdate ? "PUT" : "POST";
+
+                        const response = await fetch(
+                            `/clients/me/reservations/${this.commentaireReservationId}/commentaire`,
+                            {
+                                method,
+                                headers: this.getAuthHeaders(true),
+                                body: JSON.stringify({
+                                    note: Number(this.commentaireForm.note),
+                                    texte: this.commentaireForm.texte.trim()
+                                })
+                            }
+                        );
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible d’enregistrer le commentaire.")
+                            );
+                        }
+
+                        this.commentaireSuccess = isUpdate
+                            ? "Commentaire modifié avec succès."
+                            : "Commentaire ajouté avec succès.";
+
+                        this.actionMessage = this.commentaireSuccess;
+
+                        await this.fetchCommentaireForReservation(this.commentaireReservationId);
+                    } catch (error) {
+                        this.commentaireError = error.message || "Erreur lors de l’enregistrement du commentaire.";
+                    } finally {
+                        this.commentaireSaving = false;
+                    }
+                },
+
+                async openReservationDetailModal(reservationId) {
+                    this.showReservationDetailModal = true;
+                    this.reservationDetailLoading = true;
+                    this.reservationDetailError = "";
+                    this.selectedReservationDetail = null;
+
+                    try {
+                        const response = await fetch(`/clients/me/reservations/${reservationId}`, {
+                            headers: this.getAuthHeaders()
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de charger le détail de la réservation.")
+                            );
+                        }
+
+                        this.selectedReservationDetail = payload.data || null;
+                    } catch (error) {
+                        this.reservationDetailError = error.message || "Erreur lors du chargement du détail.";
+                    } finally {
+                        this.reservationDetailLoading = false;
+                    }
+                },
+
+                closeReservationDetailModal() {
+                    this.showReservationDetailModal = false;
+                    this.reservationDetailLoading = false;
+                    this.reservationDetailError = "";
+                    this.selectedReservationDetail = null;
+                },
+
+                async openFactureDetailModal(factureId) {
+                    this.showFactureDetailModal = true;
+                    this.factureDetailLoading = true;
+                    this.factureDetailError = "";
+                    this.selectedFactureDetail = null;
+
+                    if (!factureId) {
+                        this.factureDetailError = "Identifiant de facture introuvable.";
+                        this.factureDetailLoading = false;
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch(`/clients/me/factures/${factureId}`, {
+                            headers: this.getAuthHeaders()
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible de charger le détail de la facture.")
+                            );
+                        }
+
+                        this.selectedFactureDetail = payload.data || null;
+                    } catch (error) {
+                        this.factureDetailError = error.message || "Erreur lors du chargement du détail de la facture.";
+                    } finally {
+                        this.factureDetailLoading = false;
+                    }
+                },
+
+                closeFactureDetailModal() {
+                    this.showFactureDetailModal = false;
+                    this.factureDetailLoading = false;
+                    this.factureDetailError = "";
+                    this.selectedFactureDetail = null;
+                },
+
+                async cancelReservation(reservationId) {
+                    this.actionError = "";
+                    this.actionMessage = "";
+
+                    const confirmed = window.confirm("Voulez-vous vraiment annuler cette réservation ?");
+                    if (!confirmed) return;
+
+                    try {
+                        const response = await fetch(`/clients/me/reservations/${reservationId}`, {
+                            method: "DELETE",
+                            headers: this.getAuthHeaders()
+                        });
+
+                        const payload = await this.safeReadJson(response);
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(
+                                this.getErrorMessage(payload, "Impossible d'annuler la réservation.")
+                            );
+                        }
+
+                        this.actionMessage = "Réservation annulée avec succès.";
+                        await this.refreshDashboardData();
+                    } catch (error) {
+                        this.actionError = error.message || "Erreur lors de l'annulation.";
+                    }
+                },
+
+                async refreshDashboardData() {
+                    this.commentairesByReservation = {};
+
+                    await Promise.all([
+                        this.fetchUpcomingReservations(),
+                        this.fetchPastReservations(),
+                        this.fetchAllReservations(),
+                        this.fetchFactures()
+                    ]);
+
+                    await this.fetchCommentairesForReservations([
+                        ...this.upcomingReservations,
+                        ...this.pastReservations,
+                        ...this.allReservations
+                    ]);
+                }
+            },
+            async mounted() {
+                const accessToken = this.getAccessToken();
+                const role = this.getUserRole();
+
+                if (!accessToken) {
+                    this.redirectToLogin("Vous devez être connecté pour accéder à votre tableau de bord.");
+                    return;
+                }
+
+                if (role !== "client") {
+                    this.redirectToLogin("Vous devez être connecté comme client pour accéder à cette page.");
+                    return;
+                }
+
+                await this.refreshDashboardData();
+            }
+        };
+
+        Vue.createApp(ClientDashboardApp).mount("#app");
+    </script>
+{% endblock %}

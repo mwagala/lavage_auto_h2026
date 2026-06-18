@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roadmap C# React PostgreSQL</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 1100px; margin: 28px auto; line-height: 1.45; color: #1a1a1a; }
+    h1, h2 { margin-top: 24px; }
+    .mermaid { background: #fafafa; border: 1px solid #ddd; border-radius: 8px; padding: 12px; overflow-x: auto; }
+    ul, ol { padding-left: 24px; }
+    code { background:#f3f3f3; padding:2px 6px; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <h1>Roadmap Fonctionnalites - Version C# / React / PostgreSQL</h1>
+
+  <h2>Stack cible recommandee</h2>
+  <ul>
+    <li>Backend: ASP.NET Core 8 Web API (C#)</li>
+    <li>Frontend: React + TypeScript (Vite)</li>
+    <li>Base de donnees: PostgreSQL 16 + PostGIS</li>
+    <li>Realtime: SignalR</li>
+    <li>Jobs: Hangfire + Redis</li>
+    <li>Notifications: SendGrid + Twilio</li>
+    <li>Paiement: Stripe</li>
+    <li>PDF: QuestPDF</li>
+    <li>Stockage: S3/Blob</li>
+  </ul>
+
+  <h2>Diagramme d'architecture global (C#)</h2>
+  <pre class="mermaid">
+flowchart LR
+    subgraph U[Utilisateurs]
+        C[Client]
+        P[Prestataire]
+        A[Admin]
+    end
+    subgraph FE[Frontend]
+        R[React SPA]
+    end
+    subgraph BE[Backend .NET]
+        API[ASP.NET Core API]
+        HUB[SignalR Hub]
+        JOBS[Hangfire Jobs]
+        OUTBOX[Outbox Worker]
+    end
+    subgraph DATA[Data]
+        PG[(PostgreSQL + PostGIS)]
+        REDIS[(Redis)]
+        S3[(S3/Blob)]
+    end
+    subgraph EXT[Externe]
+        STRIPE[Stripe]
+        SENDGRID[SendGrid]
+        TWILIO[Twilio]
+        DOCUSIGN[DocuSign]
+    end
+    C --> R
+    P --> R
+    A --> R
+    R --> API
+    R <--> HUB
+    API --> PG
+    API --> REDIS
+    JOBS --> REDIS
+    OUTBOX --> PG
+    API --> S3
+    API --> STRIPE
+    API --> SENDGRID
+    API --> TWILIO
+    API --> DOCUSIGN
+  </pre>
+
+  <h2>Diagramme d'architecture backend uniquement (C#)</h2>
+  <pre class="mermaid">
+flowchart TB
+    subgraph API[ASP.NET Core Backend]
+        GW[Controllers]
+        AUTH[Auth + 2FA]
+        RES[Reservations]
+        BILL[Facturation/PDF]
+        PAY[Paiements]
+        NOTIF[Notifications]
+        TRACK[Tracking]
+        MEDIA[Media/Documents]
+        AGREE[Ententes]
+        HUB[SignalR]
+        JOBS[Hangfire]
+        OUTBOX[Outbox]
+    end
+    subgraph STORE[Stockage]
+        PG[(PostgreSQL + PostGIS)]
+        REDIS[(Redis)]
+        CLOUD[(S3/Blob)]
+    end
+    subgraph PROVIDERS[Providers]
+        STRIPE[Stripe]
+        SENDGRID[SendGrid]
+        TWILIO[Twilio]
+        DOCUSIGN[DocuSign]
+    end
+    GW --> AUTH
+    GW --> RES
+    GW --> BILL
+    GW --> PAY
+    GW --> NOTIF
+    GW --> TRACK
+    GW --> MEDIA
+    GW --> AGREE
+    GW <--> HUB
+    AUTH --> PG
+    RES --> PG
+    BILL --> PG
+    PAY --> PG
+    NOTIF --> PG
+    TRACK --> PG
+    MEDIA --> PG
+    AGREE --> PG
+    OUTBOX --> PG
+    HUB --> REDIS
+    JOBS --> REDIS
+    MEDIA --> CLOUD
+    BILL --> CLOUD
+    AGREE --> CLOUD
+    PAY --> STRIPE
+    NOTIF --> SENDGRID
+    NOTIF --> TWILIO
+    AGREE --> DOCUSIGN
+  </pre>
+
+  <h2>Diagramme d'architecture front-end uniquement (React)</h2>
+  <pre class="mermaid">
+flowchart TB
+    subgraph UI[React SPA]
+        APP[App Shell]
+        ROUTER[React Router]
+        AUTHP[AuthProvider]
+        GUARD[Route Guards RBAC]
+        STATE[Redux Toolkit / React Query]
+        FORMS[React Hook Form + Zod]
+        MAP[Tracking Map View]
+        CENTER[Notification Center]
+        FILES[Upload Media/Documents]
+        BILLVIEW[PDF Facture Viewer]
+        SIGN[Entente Signature UI]
+        WS[SignalR Client]
+    end
+    subgraph PAGES[Pages]
+        LOGIN[Login + 2FA]
+        CD[Client Dashboard]
+        PD[Prestataire Dashboard]
+        AD[Admin Console]
+        RESV[Reservations]
+        FACT[Factures]
+    end
+    subgraph API[Backend]
+        REST[REST API]
+        HUB[SignalR Hub]
+        PRE[Pre-signed Upload URLs]
+    end
+    APP --> ROUTER
+    ROUTER --> LOGIN
+    ROUTER --> CD
+    ROUTER --> PD
+    ROUTER --> AD
+    ROUTER --> RESV
+    ROUTER --> FACT
+    AUTHP --> GUARD
+    GUARD --> ROUTER
+    STATE --> REST
+    FORMS --> LOGIN
+    FORMS --> RESV
+    WS <--> HUB
+    MAP <--> WS
+    CENTER <--> WS
+    FILES --> PRE
+    FILES --> REST
+    BILLVIEW --> REST
+    SIGN --> REST
+  </pre>
+
+  <h2>Diagramme de classes (domaine principal)</h2>
+  <pre class="mermaid">
+classDiagram
+    class User
+    class Client
+    class Prestataire
+    class Administrateur
+    class Reservation
+    class ReservationService
+    class ServiceOffert
+    class Facture
+    class PaymentTransaction
+    class NotificationEvent
+    class NotificationDelivery
+    class ProviderLocationPoint
+    class ServiceAgreement
+    class ServiceMedia
+    class TwoFactorMethod
+    User <|-- Client
+    User <|-- Prestataire
+    User <|-- Administrateur
+    Client "1" --> "0..*" Reservation : cree
+    Prestataire "1" --> "0..*" Reservation : execute
+    Prestataire "1" --> "0..*" ServiceOffert : propose
+    Reservation "1" --> "1..*" ReservationService
+    ServiceOffert "1" --> "0..*" ReservationService
+    Reservation "1" --> "0..1" Facture
+    Reservation "1" --> "0..*" PaymentTransaction
+    Reservation "1" --> "0..*" NotificationEvent
+    NotificationEvent "1" --> "0..*" NotificationDelivery
+    Prestataire "1" --> "0..*" ProviderLocationPoint
+    Reservation "1" --> "0..1" ServiceAgreement
+    Reservation "1" --> "0..*" ServiceMedia
+    User "1" --> "0..*" TwoFactorMethod
+  </pre>
+
+  <h2>Plan d'implementation (resume)</h2>
+  <ol>
+    <li>Fondations: architecture, migrations, Redis/Hangfire/SignalR.</li>
+    <li>Auth + 2FA.</li>
+    <li>Notifications email/SMS.</li>
+    <li>Paiement Stripe.</li>
+    <li>Facture PDF.</li>
+    <li>Tracking live.</li>
+    <li>Rappels 24h/2h.</li>
+    <li>Entente de service signee.</li>
+    <li>Photos/docs cloud.</li>
+    <li>QA + rollout progressif.</li>
+  </ol>
+
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: "default" });
+  </script>
+</body>
+</html>
+

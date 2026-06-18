@@ -1,0 +1,23 @@
+# Secrets et configuration locale
+.env
+.env.*
+!.env.example
+
+# Environnements Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Fichiers d'execution locaux
+celerybeat-schedule
+celerybeat-schedule.*
+
+# IDE et systeme
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Artefacts generes localement
+outputs/

@@ -1,0 +1,38 @@
+1. Creer et demarrer le container PostgreSQL:
+
+docker run -d --name postgres-container -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=change_me -e POSTGRES_DB=lavage_auto -p 5432:5432 -v postgres-data:/var/lib/postgresql/data postgres:16
+
+2. Verifier que PostgreSQL est pret:
+
+docker exec postgres-container pg_isready -U postgres -d lavage_auto
+
+3. Copier le schema PostgreSQL dans le container:
+
+docker cp bd/init.sql postgres-container:/tmp/init.sql
+
+4. Initialiser ou reinitialiser le schema de la base:
+
+docker exec -i postgres-container psql -U postgres -d lavage_auto -f /tmp/init.sql
+
+5. Verifier les tables creees:
+
+docker exec -it postgres-container psql -U postgres -d lavage_auto -c "\dt"
+
+6. Peupler les donnees de test depuis le projet:
+
+.\.venv\Scripts\python.exe -m bd.peuplement
+
+7. Lancer Flask:
+
+.\scripts\run_flask.ps1
+
+Notes:
+- Les valeurs ci-dessus sont des exemples. Utilise les memes valeurs dans ton `.env` local:
+  DB_HOST=localhost
+  DB_USER=postgres
+  DB_PASSWORD=change_me
+  DB_NAME=lavage_auto
+  DB_PORT=5432
+- Pour repartir de zero, supprimer le container et le volume:
+  docker rm -f postgres-container
+  docker volume rm postgres-data

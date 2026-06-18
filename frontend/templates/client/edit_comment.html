@@ -1,0 +1,258 @@
+{% extends "base_auth.html" %}
+
+{% block title %}Modifier commentaire | LavageAuto{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/client.css') }}">
+{% endblock %}
+
+{% block content %}
+    <section class="client-dashboard-section">
+        <div class="container">
+            <div v-if="pageError" class="auth-message auth-message-error">
+                ${ pageError }
+            </div>
+
+            <div v-else class="profile-shell">
+                <div class="dashboard-hero">
+                    <div>
+                        <span class="section-kicker">Commentaire</span>
+                        <h1 class="dashboard-title">Commentaire pour la reservation #${ reservationId }</h1>
+                        <p class="dashboard-subtitle">
+                            Ajoutez ou modifiez votre commentaire et votre note.
+                        </p>
+                    </div>
+
+                    <div class="dashboard-actions">
+                        <a href="{{ url_for('client_front.client_dashboard_page') }}" class="btn btn-secondary">
+                            Retour au tableau de bord
+                        </a>
+                    </div>
+                </div>
+
+                <section class="dashboard-section-card">
+                    <div v-if="loading" class="section-description">
+                        Chargement du commentaire...
+                    </div>
+
+                    <form v-else class="auth-form" @submit.prevent="submitComment">
+                        <div class="form-group">
+                            <label for="note">Note (1 a 5)</label>
+                            <select id="note" v-model.number="form.note" class="auth-input" required>
+                                <option :value="0">Selectionnez une note</option>
+                                <option :value="1">1</option>
+                                <option :value="2">2</option>
+                                <option :value="3">3</option>
+                                <option :value="4">4</option>
+                                <option :value="5">5</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="texte">Commentaire</label>
+                            <textarea
+                                id="texte"
+                                v-model.trim="form.texte"
+                                class="auth-input"
+                                rows="5"
+                                required
+                            ></textarea>
+                        </div>
+
+                        <div class="reservation-summary-card">
+                            <h3>Etat</h3>
+                            <p><strong>Mode :</strong> ${ isUpdateMode ? 'Modification' : 'Creation' }</p>
+                        </div>
+
+                        <div v-if="errorMessage" class="auth-message auth-message-error">
+                            ${ errorMessage }
+                        </div>
+
+                        <div v-if="successMessage" class="auth-message auth-message-success">
+                            ${ successMessage }
+                        </div>
+
+                        <button type="submit" class="btn btn-primary auth-submit" :disabled="saving">
+                            <span v-if="saving">Enregistrement...</span>
+                            <span v-else>Enregistrer le commentaire</span>
+                        </button>
+                    </form>
+                </section>
+            </div>
+        </div>
+    </section>
+{% endblock %}
+
+{% block vue_app %}
+    <script>
+        const EditCommentApp = {
+            delimiters: ['${', '}'],
+            mixins: [BasePublicApp],
+            data() {
+                return {
+                    reservationId: Number("{{ reservation_id }}"),
+                    pageError: "",
+                    errorMessage: "",
+                    successMessage: "",
+                    loading: false,
+                    saving: false,
+                    isUpdateMode: false,
+                    form: {
+                        note: 0,
+                        texte: ""
+                    }
+                };
+            },
+            methods: {
+                getAccessToken() {
+                    return localStorage.getItem("access_token") || "";
+                },
+
+                getUserRole() {
+                    return localStorage.getItem("user_role") || "";
+                },
+
+                redirectToLogin(message) {
+                    this.pageError = message;
+                    setTimeout(() => {
+                        window.location.href = "{{ url_for('public.login_page') }}";
+                    }, 1300);
+                },
+
+                async safeReadJson(response) {
+                    const contentType = response.headers.get("content-type") || "";
+                    if (!contentType.includes("application/json")) {
+                        return null;
+                    }
+                    try {
+                        return await response.json();
+                    } catch {
+                        return null;
+                    }
+                },
+
+                getErrorMessage(payload, fallbackMessage) {
+                    if (payload && typeof payload.message === "string" && payload.message.trim()) {
+                        return payload.message;
+                    }
+                    if (payload && typeof payload.error === "string" && payload.error.trim()) {
+                        return payload.error;
+                    }
+                    return fallbackMessage;
+                },
+
+                validateForm() {
+                    if (!this.form.note || this.form.note < 1 || this.form.note > 5) {
+                        return "Veuillez choisir une note entre 1 et 5.";
+                    }
+                    if (!this.form.texte || !this.form.texte.trim()) {
+                        return "Veuillez ecrire un commentaire.";
+                    }
+                    return "";
+                },
+
+                async fetchExistingComment() {
+                    this.loading = true;
+                    this.errorMessage = "";
+
+                    try {
+                        const response = await fetch(
+                            `/clients/me/reservations/${this.reservationId}/commentaire`,
+                            {
+                                headers: {
+                                    "Accept": "application/json",
+                                    "Authorization": `Bearer ${this.getAccessToken()}`
+                                }
+                            }
+                        );
+
+                        const payload = await this.safeReadJson(response);
+                        if (response.status === 404) {
+                            this.isUpdateMode = false;
+                            return;
+                        }
+
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(this.getErrorMessage(payload, "Impossible de charger le commentaire."));
+                        }
+
+                        const comment = payload.data || {};
+                        this.form.note = Number(comment.note || 0);
+                        this.form.texte = comment.texte || "";
+                        this.isUpdateMode = true;
+                    } catch (error) {
+                        this.pageError = error.message || "Erreur au chargement du commentaire.";
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async submitComment() {
+                    this.errorMessage = "";
+                    this.successMessage = "";
+
+                    const validationError = this.validateForm();
+                    if (validationError) {
+                        this.errorMessage = validationError;
+                        return;
+                    }
+
+                    this.saving = true;
+                    try {
+                        const method = this.isUpdateMode ? "PUT" : "POST";
+                        const response = await fetch(
+                            `/clients/me/reservations/${this.reservationId}/commentaire`,
+                            {
+                                method,
+                                headers: {
+                                    "Content-Type": "application/json",
+                                    "Accept": "application/json",
+                                    "Authorization": `Bearer ${this.getAccessToken()}`
+                                },
+                                body: JSON.stringify({
+                                    note: Number(this.form.note),
+                                    texte: this.form.texte.trim()
+                                })
+                            }
+                        );
+
+                        const payload = await this.safeReadJson(response);
+                        if (!response.ok || !payload || payload.success !== true) {
+                            throw new Error(this.getErrorMessage(payload, "Impossible d'enregistrer le commentaire."));
+                        }
+
+                        this.isUpdateMode = true;
+                        this.successMessage = "Commentaire enregistre avec succes.";
+                    } catch (error) {
+                        this.errorMessage = error.message || "Erreur lors de l'enregistrement.";
+                    } finally {
+                        this.saving = false;
+                    }
+                }
+            },
+            mounted() {
+                if (!Number.isInteger(this.reservationId) || this.reservationId <= 0) {
+                    this.pageError = "Identifiant de reservation invalide.";
+                    return;
+                }
+
+                const accessToken = this.getAccessToken();
+                const role = this.getUserRole();
+
+                if (!accessToken) {
+                    this.redirectToLogin("Vous devez etre connecte pour modifier un commentaire.");
+                    return;
+                }
+
+                if (role !== "client") {
+                    this.redirectToLogin("Cette page est reservee aux clients.");
+                    return;
+                }
+
+                this.fetchExistingComment();
+            }
+        };
+
+        Vue.createApp(EditCommentApp).mount("#app");
+    </script>
+{% endblock %}

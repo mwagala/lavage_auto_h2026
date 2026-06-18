@@ -1,0 +1,459 @@
+{% extends "base_auth.html" %}
+
+{% block title %}Inscription | LavageAuto{% endblock %}
+
+{% block content %}
+<section class="auth-section">
+  <div class="container">
+    <div class="auth-wrapper">
+      <div class="auth-card auth-card-register">
+        <div class="auth-card-inner auth-card-inner-register">
+          <div class="auth-header">
+            <h1 class="auth-title">Créer un compte</h1>
+            <p class="auth-subtitle">
+              Inscrivez-vous pour réserver des services ou proposer vos prestations sur LavageAuto.
+            </p>
+          </div>
+
+          <form class="auth-form" @submit.prevent="submitRegister">
+            <div class="form-group">
+              <label for="role">Rôle</label>
+              <select id="role" v-model="form.role" class="auth-input">
+                <option value="client">Client</option>
+                <option value="prestataire">Prestataire</option>
+              </select>
+            </div>
+
+            <div class="auth-grid">
+              <div class="form-group">
+                <label for="nom">Nom</label>
+                <input
+                  id="nom"
+                  v-model.trim="form.nom"
+                  type="text"
+                  class="auth-input"
+                  placeholder="Entrez votre nom"
+                  required
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="prenoms">Prénoms</label>
+                <input
+                  id="prenoms"
+                  v-model.trim="form.prenoms"
+                  type="text"
+                  class="auth-input"
+                  placeholder="Entrez vos prénoms"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="auth-grid">
+              <div class="form-group">
+                <label for="date_naissance">Date de naissance</label>
+                <input
+                  id="date_naissance"
+                  v-model="form.date_naissance"
+                  type="date"
+                  class="auth-input"
+                  required
+                />
+              </div>
+
+              <div class="form-group" v-if="form.role === 'client'">
+                <label for="mode_paiement">Mode de paiement</label>
+                <select id="mode_paiement" v-model="form.mode_paiement" class="auth-input">
+                  <option value="Comptant">Comptant</option>
+                  <option value="Carte Credit">Carte Credit</option>
+                  <option value="Carte debit">Carte debit</option>
+                </select>
+              </div>
+
+              <div class="form-group" v-else>
+                <label for="nas">NAS</label>
+                <input
+                  id="nas"
+                  v-model.trim="form.nas"
+                  type="text"
+                  class="auth-input"
+                  placeholder="Entrez votre NAS"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="auth-grid">
+              <div class="form-group">
+                <label for="courriel">Courriel</label>
+                <input
+                  id="courriel"
+                  v-model.trim="form.courriel"
+                  type="email"
+                  class="auth-input"
+                  placeholder="Entrez votre courriel"
+                  required
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="telephone">Téléphone</label>
+                <input
+                  id="telephone"
+                  v-model.trim="form.telephone"
+                  type="text"
+                  class="auth-input"
+                  placeholder="Entrez votre téléphone"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="auth-grid auth-grid-address">
+              <div class="form-group">
+                <label for="adresse_numero">Numéro</label>
+                <input
+                  id="adresse_numero"
+                  v-model.trim="form.adresse_numero"
+                  type="text"
+                  class="auth-input"
+                  placeholder="Ex. 100"
+                  required
+                />
+              </div>
+
+              <div class="form-group auth-grid-span-2">
+                <label for="adresse_rue">Rue</label>
+                <input
+                  id="adresse_rue"
+                  v-model.trim="form.adresse_rue"
+                  type="text"
+                  class="auth-input"
+                  placeholder="Entrez votre rue"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="auth-grid auth-grid-address">
+              <div class="form-group">
+                <label for="adresse_ville">Ville</label>
+                <input
+                  id="adresse_ville"
+                  v-model.trim="form.adresse_ville"
+                  type="text"
+                  class="auth-input"
+                  placeholder="Entrez votre ville"
+                  required
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="adresse_province">Province</label>
+                <input
+                  id="adresse_province"
+                  v-model.trim="form.adresse_province"
+                  type="text"
+                  class="auth-input"
+                  placeholder="Ex. QC"
+                  required
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="adresse_code_postal">Code postal</label>
+                <input
+                  id="adresse_code_postal"
+                  v-model.trim="form.adresse_code_postal"
+                  type="text"
+                  class="auth-input"
+                  placeholder="Ex. G1G1G1"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="mot_de_passe">Mot de passe</label>
+              <input
+                id="mot_de_passe"
+                v-model="form.mot_de_passe"
+                type="password"
+                class="auth-input"
+                placeholder="Entrez votre mot de passe"
+                minlength="15"
+                maxlength="128"
+                required
+              />
+            </div>
+
+            <div v-if="errorMessage" class="auth-message auth-message-error">
+              ${ errorMessage }
+            </div>
+
+            <div v-if="successMessage" class="auth-message auth-message-success">
+              ${ successMessage }
+            </div>
+
+            <button type="submit" class="btn btn-primary auth-submit" :disabled="loading">
+              <span v-if="loading">Création du compte...</span>
+              <span v-else>Créer mon compte</span>
+            </button>
+          </form>
+
+          <div class="auth-footer">
+            <p>
+              Vous avez déjà un compte ?
+              <a href="{{ url_for('public.login_page') }}" class="auth-link">
+                Se connecter
+              </a>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block vue_app %}
+<script>
+  const RegisterApp = {
+    delimiters: ['${', '}'],
+    mixins: [BasePublicApp],
+    data() {
+      return {
+        loading: false,
+        errorMessage: "",
+        successMessage: "",
+        form: {
+          role: "client",
+          nom: "",
+          prenoms: "",
+          date_naissance: "",
+          courriel: "",
+          telephone: "",
+          mode_paiement: "Comptant",
+          nas: "",
+          adresse_numero: "",
+          adresse_rue: "",
+          adresse_ville: "",
+          adresse_province: "",
+          adresse_code_postal: "",
+          mot_de_passe: ""
+        }
+      };
+    },
+    methods: {
+      validateForm() {
+        const requiredCommonFields = [
+          ["nom", "Veuillez entrer votre nom."],
+          ["prenoms", "Veuillez entrer vos prénoms."],
+          ["date_naissance", "Veuillez entrer votre date de naissance."],
+          ["courriel", "Veuillez entrer votre courriel."],
+          ["telephone", "Veuillez entrer votre numéro de téléphone."],
+          ["adresse_numero", "Veuillez entrer votre numéro d’adresse."],
+          ["adresse_rue", "Veuillez entrer votre rue."],
+          ["adresse_ville", "Veuillez entrer votre ville."],
+          ["adresse_province", "Veuillez entrer votre province."],
+          ["adresse_code_postal", "Veuillez entrer votre code postal."],
+          ["mot_de_passe", "Veuillez entrer votre mot de passe."]
+        ];
+
+        for (const [field, message] of requiredCommonFields) {
+          if (!this.form[field] || !String(this.form[field]).trim()) {
+            return message;
+          }
+        }
+
+        const email = this.form.courriel.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!emailRegex.test(email)) {
+          return "Veuillez entrer une adresse courriel valide.";
+        }
+
+        const phone = this.form.telephone.trim();
+        if (phone.length < 8) {
+          return "Veuillez entrer un numéro de téléphone valide.";
+        }
+
+        const codePostalRegex = /^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/;
+        if (!codePostalRegex.test(this.form.adresse_code_postal.trim())) {
+          return "Le code postal doit respecter le format A1A 1A1.";
+        }
+
+        const password = this.form.mot_de_passe;
+        const normalizedPassword = password.replace(/[\s_\-.'"`]+/g, "").toLowerCase();
+        const weakPasswords = [
+          "password",
+          "password123",
+          "passwordpassword",
+          "password123password",
+          "motdepasse",
+          "motdepasse123",
+          "motdepassemotdepasse",
+          "admin",
+          "admin123",
+          "qwerty",
+          "qwertyqwerty",
+          "azerty",
+          "azertyazerty",
+          "123456789",
+          "1234567890",
+          "lavageauto",
+          "lavageauto123",
+          "lavageautolavageauto"
+        ];
+        const weakPasswordRoots = ["password", "motdepasse", "admin", "qwerty", "azerty", "lavageauto"];
+
+        if (password.length < 15) {
+          return "Le mot de passe doit contenir au moins 15 caractères.";
+        }
+
+        if (password.length > 128) {
+          return "Le mot de passe ne doit pas dépasser 128 caractères.";
+        }
+
+        if (/[\u0000-\u001F\u007F]/.test(password)) {
+          return "Le mot de passe ne doit pas contenir de caractères de contrôle.";
+        }
+
+        if (!normalizedPassword || weakPasswords.includes(normalizedPassword) || weakPasswordRoots.some(root => new RegExp(`^${root}\\d*$`).test(normalizedPassword))) {
+          return "Ce mot de passe est trop facile à deviner.";
+        }
+
+        if (!this.form.role) {
+          return "Veuillez sélectionner un rôle.";
+        }
+
+        if (this.form.role === "client") {
+          if (!this.form.mode_paiement || !this.form.mode_paiement.trim()) {
+            return "Veuillez sélectionner un mode de paiement.";
+          }
+        }
+
+        if (this.form.role === "prestataire") {
+          if (!this.form.nas || !this.form.nas.trim()) {
+            return "Veuillez entrer votre NAS.";
+          }
+
+          const nasRegex = /^\d{9}$/;
+          if (!nasRegex.test(this.form.nas.trim())) {
+            return "Le NAS doit contenir exactement 9 chiffres.";
+          }
+        }
+
+        return "";
+      },
+
+      buildPayload() {
+        const basePayload = {
+          role: this.form.role,
+          nom: this.form.nom.trim(),
+          prenoms: this.form.prenoms.trim(),
+          date_naissance: this.form.date_naissance,
+          courriel: this.form.courriel.trim(),
+          telephone: this.form.telephone.trim(),
+          adresse_numero: this.form.adresse_numero.trim(),
+          adresse_rue: this.form.adresse_rue.trim(),
+          adresse_ville: this.form.adresse_ville.trim(),
+          adresse_province: this.form.adresse_province.trim(),
+          adresse_code_postal: this.form.adresse_code_postal.trim(),
+          mot_de_passe: this.form.mot_de_passe
+        };
+
+        if (this.form.role === "client") {
+          return {
+            ...basePayload,
+            mode_paiement: this.form.mode_paiement.trim()
+          };
+        }
+
+        return {
+          ...basePayload,
+          nas: this.form.nas.trim()
+        };
+      },
+
+      async safeReadJson(response) {
+        const contentType = response.headers.get("content-type") || "";
+
+        if (!contentType.includes("application/json")) {
+          return null;
+        }
+
+        try {
+          return await response.json();
+        } catch {
+          return null;
+        }
+      },
+
+      getErrorMessage(payload, fallbackMessage) {
+        if (payload && typeof payload.message === "string" && payload.message.trim()) {
+          return payload.message;
+        }
+
+        if (payload && typeof payload.error === "string" && payload.error.trim()) {
+          return payload.error;
+        }
+
+        return fallbackMessage;
+      },
+
+      async submitRegister() {
+        this.loading = true;
+        this.errorMessage = "";
+        this.successMessage = "";
+
+        const validationError = this.validateForm();
+        if (validationError) {
+          this.errorMessage = validationError;
+          this.loading = false;
+          return;
+        }
+
+        try {
+          const response = await fetch("/auth/register", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "application/json"
+            },
+            body: JSON.stringify(this.buildPayload())
+          });
+
+          const payload = await this.safeReadJson(response);
+
+          if (!response.ok) {
+            throw new Error(
+              this.getErrorMessage(payload, "Impossible de créer le compte pour le moment.")
+            );
+          }
+
+          if (!payload || payload.success !== true) {
+            throw new Error(
+              this.getErrorMessage(payload, "Échec de l'inscription.")
+            );
+          }
+
+          this.successMessage = "Compte créé avec succès. Redirection vers la connexion...";
+
+          setTimeout(() => {
+            window.location.href = "{{ url_for('public.login_page') }}";
+          }, 1200);
+
+        } catch (error) {
+          this.errorMessage = error?.message || "Une erreur est survenue pendant l'inscription.";
+        } finally {
+          this.loading = false;
+        }
+      }
+    }
+  };
+
+  Vue.createApp(RegisterApp).mount("#app");
+</script>
+{% endblock %}

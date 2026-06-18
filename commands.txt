@@ -1,0 +1,14 @@
+Lancer Flask avec le .venv du projet: .\scripts\run_flask.ps1
+Lancer le worker Celery avec le meme .venv: .\scripts\run_celery_worker.ps1
+Lancer Celery Beat pour planifier automatiquement l'Outbox: .\scripts\run_celery_beat.ps1
+Lancer Celery Beat avec le fichier Python: .\.venv\Scripts\python.exe -m backend.celery.run_beat
+
+Commande equivalente worker Celery: .\.venv\Scripts\celery.exe -A backend.celery.celery_app:celery_app worker -l INFO --pool=solo
+Commande equivalente Celery Beat: .\.venv\Scripts\celery.exe -A backend.celery.celery_app:celery_app beat -l INFO --schedule celerybeat-schedule
+Creer la base PostgreSQL: createdb lavage_auto
+Initialiser le schema PostgreSQL: psql -d lavage_auto -f bd/init.sql
+Appliquer les tables fondations sans reinitialiser le schema: psql -d lavage_auto -f bd/migrations/001_fondations_tables.sql
+Verifier que Flask repond: curl http://127.0.0.1:5000/health
+Verifier les dependances de fondation: curl http://127.0.0.1:5000/health/readiness
+Executer le consumer Outbox directement pour debug: .\.venv\Scripts\python.exe -c "from backend.celery.tasks.outbox import process_pending_outbox_events; print(process_pending_outbox_events.run(10))"
+Envoyer le consumer Outbox au worker Celery: .\.venv\Scripts\python.exe -c "from backend.celery.tasks.outbox import process_pending_outbox_events; print(process_pending_outbox_events.delay(10).get(timeout=10))"

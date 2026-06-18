@@ -1,0 +1,377 @@
+{% extends "base_public.html" %}
+
+{% block title %}Accueil | LavageAuto{% endblock %}
+
+{% block content %}
+    <section class="hero-section">
+        <div class="container hero-grid">
+            <div class="hero-content">
+                <span class="eyebrow">Service à domicile</span>
+                <h1 class="hero-title">
+                    Réservez votre lavage auto à domicile en quelques clics
+                </h1>
+                <p class="hero-description">
+                    Gagnez du temps avec une solution simple, rapide et fiable. Choisissez un service,
+                    sélectionnez un créneau et laissez un prestataire qualifié s’occuper de votre véhicule.
+                </p>
+                <div v-if="authRedirectMessage" class="auth-message auth-message-error">
+                    ${ authRedirectMessage }
+                </div>
+
+                <div class="hero-actions">
+                    <button type="button" class="btn btn-primary" @click="goToReservation">
+                        Réserver maintenant
+                    </button>
+                    <a href="{{ url_for('public.services_page') }}" class="btn btn-secondary">Voir les services</a>
+                </div>
+
+                <div class="hero-stats">
+                    <div class="stat-card">
+                        <strong>Rapide</strong>
+                        <span>Réservation simple</span>
+                    </div>
+                    <div class="stat-card">
+                        <strong>Fiable</strong>
+                        <span>Prestataires évalués</span>
+                    </div>
+                    <div class="stat-card">
+                        <strong>Pratique</strong>
+                        <span>Service à domicile</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hero-visual">
+                <div class="hero-card">
+                    <div class="hero-card-badge">Disponible aujourd’hui</div>
+                    <h3 class="hero-card-title">Lavage premium à domicile</h3>
+                    <p class="hero-card-text">
+                        Un prestataire vient à l’endroit convenu pour un service professionnel et pratique.
+                    </p>
+
+                    <div class="hero-mini-list">
+                        <div class="hero-mini-item">
+                            <span class="dot"></span>
+                            <span>Choisissez un service</span>
+                        </div>
+                        <div class="hero-mini-item">
+                            <span class="dot"></span>
+                            <span>Sélectionnez un créneau</span>
+                        </div>
+                        <div class="hero-mini-item">
+                            <span class="dot"></span>
+                            <span>Suivez votre réservation</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <div class="section-heading">
+                <span class="section-kicker">Comment ça marche</span>
+                <h2 class="section-title">Un parcours simple en 3 étapes</h2>
+                <p class="section-description">
+                    Notre plateforme a été pensée pour rendre la réservation rapide et intuitive.
+                </p>
+            </div>
+
+            <div class="feature-grid">
+                <article class="feature-card">
+                    <div class="feature-icon">1</div>
+                    <h3>Choisissez un service</h3>
+                    <p>Sélectionnez le type de lavage qui correspond à votre besoin et à votre véhicule.</p>
+                </article>
+
+                <article class="feature-card">
+                    <div class="feature-icon">2</div>
+                    <h3>Réservez un créneau</h3>
+                    <p>Consultez les disponibilités et confirmez une réservation à la date qui vous convient.</p>
+                </article>
+
+                <article class="feature-card">
+                    <div class="feature-icon">3</div>
+                    <h3>Profitez du service</h3>
+                    <p>Suivez votre réservation et retrouvez ensuite votre historique et vos factures.</p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-soft">
+        <div class="container">
+            <div class="section-heading">
+                <span class="section-kicker">Services populaires</span>
+                <h2 class="section-title">Des formules adaptées à vos besoins</h2>
+            </div>
+
+            <div v-if="loadingServices" class="section-description">Chargement des services...</div>
+            <div v-else-if="servicesError" class="section-description">${ servicesError }</div>
+
+            <div v-else class="service-grid">
+                <article class="service-card service-card-home" v-for="service in displayedServices" :key="service.id">
+                    <div class="service-card-top">
+                        <span class="service-badge">Disponible</span>
+                        <h3>${ service.nom || 'Service' }</h3>
+                    </div>
+
+                    <p class="service-description">
+                        ${ service.description || 'Description non disponible.' }
+                    </p>
+
+                    <div class="service-meta service-meta-home">
+    <span class="service-meta-item">
+      <strong>Durée: </strong>
+      <span>${ formatDuration(service.duree) }</span>
+    </span>
+
+                        <span class="service-meta-item">
+      <strong>Prix: </strong>
+      <span>${ formatPrice(service.prix) }</span>
+    </span>
+                    </div>
+
+                    <div class="service-actions">
+                        <a href="{{ url_for('public.services_page') }}" class="btn btn-ghost">
+                            Voir les services
+                        </a>
+                    </div>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <div class="section-heading">
+                <span class="section-kicker">Notre équipe</span>
+                <h2 class="section-title">Des prestataires évalués et professionnels</h2>
+            </div>
+
+            <div v-if="loadingPrestataires" class="section-description">Chargement des prestataires...</div>
+            <div v-else-if="prestatairesError" class="section-description">${ prestatairesError }</div>
+
+            <div v-else class="team-grid">
+                <article class="team-card" v-for="member in displayedPrestataires" :key="member.id">
+                    <div class="team-avatar">
+                        ${ getInitials((member.prenoms || '') + ' ' + (member.nom || '')) }
+                    </div>
+
+                    <h3 class="team-name">
+                        ${ formatFullName(member.prenoms, member.nom) }
+                    </h3>
+
+                    <p class="team-role">
+                        ${ formatLocation(member.adresse_ville, member.adresse_province) }
+                    </p>
+
+                    <p class="team-rating">
+                        Note : ${ formatRating(member.note_moyenne) }
+                    </p>
+                    <a :href="`/prestataires/${member.id}/profil`" class="btn btn-secondary btn-full">
+                        Voir le profil
+                    </a>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <section class="section cta-section">
+        <div class="container">
+            <div class="cta-box">
+                <div>
+                    <span class="section-kicker section-kicker-light">Prêt à commencer ?</span>
+                    <h2 class="cta-title">Réservez votre prochain lavage dès aujourd’hui</h2>
+                    <p class="cta-text">
+                        Connectez-vous pour réserver un service et suivre facilement vos demandes.
+                    </p>
+                </div>
+
+                <div class="cta-actions">
+                    <button type="button" class="btn btn-primary" @click="goToReservation">
+                        Réserver maintenant
+                    </button>
+                    <a href="{{ url_for('public.services_page') }}" class="btn btn-dark-outline">Voir les services</a>
+                </div>
+            </div>
+        </div>
+    </section>
+{% endblock %}
+
+{% block vue_app %}
+    <script>
+        const HomeApp = {
+            delimiters: ['${', '}'],
+            mixins: [BasePublicApp],
+            data() {
+                return {
+                    authRedirectMessage: "",
+                    mobileMenuOpen: false,
+
+                    services: [],
+                    prestataires: [],
+
+                    loadingServices: true,
+                    loadingPrestataires: true,
+
+                    servicesError: "",
+                    prestatairesError: ""
+                };
+            },
+            computed: {
+                displayedServices() {
+                    return this.services.slice(0, 3);
+                },
+                displayedPrestataires() {
+                    return this.prestataires.slice(0, 3);
+                }
+            },
+            methods: {
+                async fetchServices() {
+                    this.loadingServices = true;
+                    this.servicesError = "";
+
+                    try {
+                        const response = await fetch("/services", {
+                            headers: {"Accept": "application/json"}
+                        });
+
+                        if (!response.ok) {
+                            throw new Error("Impossible de charger les services.");
+                        }
+
+                        const payload = await response.json();
+                        this.services = Array.isArray(payload?.data) ? payload.data : [];
+                    } catch (error) {
+                        this.servicesError = error.message || "Erreur lors du chargement des services.";
+                    } finally {
+                        this.loadingServices = false;
+                    }
+                },
+
+                async fetchPrestataires() {
+                    this.loadingPrestataires = true;
+                    this.prestatairesError = "";
+
+                    try {
+                        const response = await fetch("/prestataires", {
+                            headers: {
+                                "Accept": "application/json"
+                            }
+                        });
+
+                        if (!response.ok) {
+                            throw new Error("Impossible de charger les prestataires.");
+                        }
+
+                        const data = await response.json();
+                        this.prestataires = Array.isArray(data?.data) ? data.data : [];
+                    } catch (error) {
+                        this.prestatairesError = error.message || "Erreur lors du chargement des prestataires.";
+                    } finally {
+                        this.loadingPrestataires = false;
+                    }
+                },
+                formatPrice(value) {
+                    if (value === null || value === undefined || value === "") {
+                        return "Prix non disponible";
+                    }
+
+                    const numberValue = Number(value);
+                    if (Number.isNaN(numberValue)) {
+                        return String(value);
+                    }
+
+                    return `${numberValue.toFixed(2)} $`;
+                },
+
+                formatDuration(value) {
+                    if (value === null || value === undefined || value === "") {
+                        return "Durée non disponible";
+                    }
+
+                    const numberValue = Number(value);
+                    if (Number.isNaN(numberValue)) {
+                        return String(value);
+                    }
+
+                    return `${numberValue.toFixed(2)} h`;
+                },
+
+                formatFullName(prenoms, nom) {
+                    const fullName = `${prenoms || ""} ${nom || ""}`.trim();
+                    return fullName || "Prestataire";
+                },
+
+                formatLocation(ville, province) {
+                    const parts = [ville, province].filter(Boolean);
+                    return parts.length ? parts.join(", ") : "Prestataire";
+                },
+
+                formatRating(value) {
+                    if (value === null || value === undefined || value === "") {
+                        return "N/A";
+                    }
+
+                    const numberValue = Number(value);
+                    if (Number.isNaN(numberValue)) {
+                        return String(value);
+                    }
+
+                    return `${numberValue.toFixed(1)}/5`;
+                },
+
+                getInitials(fullName) {
+                    if (!fullName) {
+                        return "PA";
+                    }
+
+                    const parts = String(fullName).trim().split(/\s+/).filter(Boolean);
+                    return parts.slice(0, 2).map(part => part[0].toUpperCase()).join("");
+                },
+                getAccessToken() {
+                    return localStorage.getItem("access_token") || "";
+                },
+
+                getUserRole() {
+                    return localStorage.getItem("user_role") || "";
+                },
+
+                redirectToLogin(message) {
+                    this.authRedirectMessage = message;
+
+                    setTimeout(() => {
+                        window.location.href = "{{ url_for('public.login_page') }}";
+                    }, 1400);
+                },
+
+                goToReservation() {
+                    const accessToken = this.getAccessToken();
+                    const role = this.getUserRole();
+
+                    if (!accessToken) {
+                        this.redirectToLogin("Vous devez être connecté comme client pour réserver.");
+                        return;
+                    }
+
+                    if (role !== "client") {
+                        this.redirectToLogin("Vous devez être connecté comme client pour réserver.");
+                        return;
+                    }
+
+                    window.location.href = "{{ url_for('client_front.new_reservation_page') }}";
+                }
+            },
+            async mounted() {
+                await Promise.all([
+                    this.fetchServices(),
+                    this.fetchPrestataires()
+                ]);
+            }
+        };
+
+        Vue.createApp(HomeApp).mount('#app');
+    </script>
+{% endblock %}

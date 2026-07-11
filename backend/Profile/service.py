@@ -1,3 +1,7 @@
+import logging
+
+from ..Commun.journaux.audit_utils import enregistrer_audit
+from ..Commun.validators import normalize_code_postal
 from .repository import (
     get_client_profile_by_id,
     get_prestataire_profile_by_id,
@@ -6,7 +10,32 @@ from .repository import (
     deactivate_client,
     deactivate_prestataire
 )
-from ..Commun.validators import normalize_code_postal
+
+
+LOGGER = logging.getLogger(__name__)
+SENSITIVE_PROFILE_FIELDS = {"mot_de_passe", "ancien_mot_de_passe", "nouveau_mot_de_passe", "nas"}
+
+
+def _champs_audites(data):
+    if not isinstance(data, dict):
+        return []
+    return sorted(set(data.keys()) - SENSITIVE_PROFILE_FIELDS)
+
+
+def _audit_update_profile(user_id, role, resultat, audit_context=None, details=None):
+    contexte = dict(audit_context or {})
+    contexte["acteur_id"] = user_id
+    contexte["role_acteur"] = role
+    _, erreur = enregistrer_audit(
+        action="profile.updated",
+        type_ressource=role if role in {"client", "prestataire"} else "profile",
+        ressource_id=str(user_id) if user_id is not None else None,
+        resultat=resultat,
+        audit_context=contexte,
+        details=details,
+    )
+    if erreur:
+        LOGGER.warning("profile_audit_failed", extra={"audit_error": erreur})
 
 
 def _validate_role(role):
@@ -28,7 +57,7 @@ def get_profile(user_id, role):
     return user, None
 
 
-def update_profile(user_id, role, data):
+def _update_profile_impl(user_id, role, data):
     if not _validate_role(role):
         return None, "Rôle invalide."
 
@@ -69,6 +98,22 @@ def update_profile(user_id, role, data):
         user = get_prestataire_profile_by_id(user_id)
 
     return user, None
+
+
+def update_profile(user_id, role, data, audit_context=None):
+    result, error = _update_profile_impl(user_id, role, data)
+    details = {"champs": _champs_audites(data)}
+    if error:
+        details["raison"] = error
+
+    _audit_update_profile(
+        user_id=user_id,
+        role=role,
+        resultat="echec" if error else "succes",
+        audit_context=audit_context,
+        details=details,
+    )
+    return result, error
 
 
 def delete_profile(user_id, role):

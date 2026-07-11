@@ -22,7 +22,7 @@ celery_app.conf.update(
             # si Redis, Celery ou le worker etaient temporairement indisponibles.
             "task": "outbox.process_pending_events",
             "schedule": Config.OUTBOX_CONSUMER_INTERVAL_SECONDS,
-            "args": (10,),
+            "args": (Config.OUTBOX_BATCH_SIZE,),
         },
     },
 )

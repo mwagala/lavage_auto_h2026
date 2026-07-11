@@ -34,22 +34,26 @@ Application web pour gerer une plateforme de reservation de lavage auto a domici
 - Catalogue services et prestataires
 - Profil public des prestataires avec services, disponibilites et commentaires
 
-### Fondations techniques implementees
+### Fondations techniques de l'etape 1
 - PostgreSQL avec scripts d'initialisation et migrations de fondation
 - Redis + Celery worker + Celery Beat
-- Outbox transactionnelle pour `reservation.created`
-- Idempotence pour proteger les traitements asynchrones
-- Consumer Outbox Celery avec dispatcher initial
+- Outbox transactionnelle pour `reservation.created`, `reservation.updated`, `reservation.cancelled` et `reservation.status_changed`
+- Idempotence pour proteger les traitements asynchrones et la creation de reservation via `Idempotency-Key`
+- Audit applicatif sur auth, mots de passe, profils et reservations
+- Consumer Outbox Celery avec dispatcher initial, retries, backoff et reprise des evenements expires
 - Logs JSON, `correlation_id` et en-tete `X-Correlation-ID`
 - Endpoints de sante `/health` et `/health/readiness`
-- Scripts PowerShell pour Flask, Celery worker et Celery Beat
+- Scripts PowerShell pour Flask, Redis, Celery worker et Celery Beat
+- Suite `pytest` pour les fondations et tests integration PostgreSQL/Redis
+- Rate limiting login/register avec backend Redis et fallback memoire limite aux environnements dev/test
+- Etape 1 fondations livree: compilation, tests unitaires, integration transactionnelle reservation + audit + Outbox et revue securite finale passent; P2 securite planifies pour etape 10 / production progressive
 
 ## 2) Roadmap des fonctionnalites a ajouter
 
 Source: [docs/roadmap-fonctionnalites-stack-actuelle.md](./docs/roadmap-fonctionnalites-stack-actuelle.md)
 
-1. Fondations (Redis + Celery + outbox + logs) - implemente
-2. 2FA (TOTP + recovery codes + fallback SMS)
+1. Fondations (Redis + Celery + outbox + logs) - livree
+2. 2FA (TOTP + recovery codes + fallback SMS) - planification ouverte
 3. Notifications asynchrones (email/SMS)
 4. Paiement en ligne (Stripe + webhooks signes)
 5. Facture PDF (generation + download)
@@ -66,6 +70,7 @@ Version diagrammes (clair, HTML):
 
 - Python 3.11+ (ou version compatible avec les dependances)
 - PostgreSQL 14+
+- Redis 7+ ou Docker pour lancer Redis localement
 - pip
 
 ## 4) Installation
@@ -97,6 +102,23 @@ Copy-Item .env.example .env
 ```
 
 Important: `.env` contient des secrets locaux et ne doit pas etre pousse dans Git.
+
+Variables importantes:
+
+- `APP_ENV`: `development`, `test` ou `production`.
+- `TESTING`: active la configuration de test Flask.
+- `DEBUG`: doit rester `False` hors developpement.
+- `CORS_ALLOWED_ORIGINS`: liste separee par des virgules; si vide, CORS n'est ouvert automatiquement qu'en developpement.
+- `REDIS_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`: connexions Redis.
+- `HEALTH_CHECK_CELERY_WORKER`: ajoute un ping worker Celery a `/health/readiness` quand `True`.
+- `RATE_LIMITING_ENABLED`, `RATE_LIMITING_BACKEND`, `AUTH_LOGIN_RATE_LIMIT_ATTEMPTS`, `AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS`: politique de limitation des tentatives de connexion.
+- `AUTH_REGISTER_RATE_LIMIT_ATTEMPTS`, `AUTH_REGISTER_RATE_LIMIT_WINDOW_SECONDS`: politique de limitation des inscriptions.
+- `OUTBOX_MAX_ATTEMPTS`, `OUTBOX_RETRY_BACKOFF_SECONDS`, `OUTBOX_MAX_RETRY_DELAY_SECONDS`: politique de reprise Outbox.
+- `OUTBOX_STALE_PROCESSING_SECONDS`: age apres lequel un evenement `en_traitement` est remis en reprise.
+
+En environnement non-dev, `SECRET_KEY` et `JWT_SECRET_KEY` doivent etre definis avec des valeurs fortes, et `DEBUG` doit etre desactive.
+
+Pour une installation exposee, PostgreSQL et Redis doivent etre limites a un reseau prive ou a des regles pare-feu strictes. Utiliser des mots de passe forts, des sauvegardes verifiees, une rotation des secrets, et TLS quand le trafic sort de la machine ou du reseau prive.
 
 ## 6) Initialiser la base de donnees
 
@@ -130,6 +152,14 @@ python -m bd.peuplement
 
 Windows PowerShell recommande:
 
+Demarrer Redis localement avec Docker:
+
+```powershell
+.\scripts\run_redis.ps1
+```
+
+Demarrer Flask:
+
 ```powershell
 .\scripts\run_flask.ps1
 ```
@@ -151,6 +181,8 @@ Celery Beat:
 ```
 
 Apres la creation d'une reservation, Flask publie maintenant la tache `outbox.process_pending_events` dans Redis juste apres le `commit`. Beat reste actif comme filet de securite: il republie la meme tache toutes les `OUTBOX_CONSUMER_INTERVAL_SECONDS` secondes pour rattraper les evenements Outbox qui seraient restes en attente.
+
+Le consumer Outbox remet en attente les echecs temporaires avec backoff jusqu'a `OUTBOX_MAX_ATTEMPTS`. Les evenements restes trop longtemps en `en_traitement` sont liberes par le prochain passage du consumer selon `OUTBOX_STALE_PROCESSING_SECONDS`.
 
 Alternative avec un fichier Python:
 
@@ -182,6 +214,7 @@ Application disponible par defaut sur:
 Controles de sante:
 - `GET /health`: verifie que Flask repond.
 - `GET /health/readiness`: verifie PostgreSQL, Redis, broker Celery et backend de resultats Celery.
+- Si `HEALTH_CHECK_CELERY_WORKER=True`, readiness verifie aussi qu'au moins un worker Celery repond au ping.
 
 Chaque reponse JSON inclut un `correlation_id`, aussi expose dans l'en-tete `X-Correlation-ID`.
 
@@ -241,5 +274,7 @@ extensions.py
 ## 11) Notes
 
 - Le projet est en cours d'evolution (voir roadmap).
+- La roadmap historique mentionne MySQL, mais ce depot implemente actuellement PostgreSQL. Les scripts, migrations et exemples locaux suivent PostgreSQL.
 - Une execution locale complete necessite PostgreSQL actif et correctement configure.
 - Redis doit etre actif pour les workers Celery et le traitement Outbox asynchrone.
+- L'etape 1 est livree sur le perimetre fondations. Les P2 securite planifies restent obligatoires avant production exposee.

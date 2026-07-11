@@ -1,6 +1,7 @@
 from flask import Blueprint, request
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 
+from ..Commun.journaux.audit_utils import construire_contexte_audit
 from ..Commun.reponses import success_response, error_response
 from .service import (
     get_profile,
@@ -31,7 +32,12 @@ def update_profile_route():
     role = get_jwt().get("role")
     data = request.get_json() or {}
 
-    result, error = update_profile(user_id, role, data)
+    result, error = update_profile(
+        user_id,
+        role,
+        data,
+        audit_context=construire_contexte_audit(user_id, role),
+    )
     if error:
         return error_response(error, 400)
 

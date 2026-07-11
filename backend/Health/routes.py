@@ -52,6 +52,18 @@ def _check_redis_url(url):
         return _ko(exc)
 
 
+def _check_celery_worker():
+    try:
+        from backend.celery.celery_app import celery_app
+
+        replies = celery_app.control.ping(timeout=Config.HEALTH_CHECK_TIMEOUT)
+        if not replies:
+            return _ko("Aucun worker Celery n'a repondu au ping.")
+        return _ok({"workers": replies})
+    except Exception as exc:
+        return _ko(exc)
+
+
 @health_bp.get("/health")
 def liveness():
     return success_response({"status": "ok", "service": "lavage-auto"})
@@ -66,7 +78,10 @@ def readiness():
         "celery_result_backend": lambda: _check_redis_url(Config.CELERY_RESULT_BACKEND),
     }
 
-    with ThreadPoolExecutor(max_workers=len(checkers)) as executor:
+    if Config.HEALTH_CHECK_CELERY_WORKER:
+        checkers["celery_worker"] = _check_celery_worker
+
+    with ThreadPoolExecutor(max_workers=max(1, len(checkers))) as executor:
         futures = {
             name: executor.submit(checker)
             for name, checker in checkers.items()

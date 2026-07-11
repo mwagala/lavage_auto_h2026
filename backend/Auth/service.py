@@ -1,8 +1,10 @@
+import logging
 from datetime import date, datetime
 
 from flask_jwt_extended import create_access_token
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from ..Commun.journaux.audit_utils import enregistrer_audit
 from ..Commun.validators import normalize_code_postal, normalize_nas, validate_password
 from .repository import (
     get_client_by_email,
@@ -21,6 +23,7 @@ from .repository import (
 
 VALID_ROLES = {"client", "prestataire"}
 VALID_PAYMENT_METHODS = {"Comptant", "Carte Credit", "Carte debit"}
+LOGGER = logging.getLogger(__name__)
 
 COMMON_REQUIRED_FIELDS = [
     "nom",
@@ -35,6 +38,36 @@ COMMON_REQUIRED_FIELDS = [
     "adresse_code_postal",
     "mot_de_passe"
 ]
+
+
+def _contexte_audit_acteur(audit_context, actor_id=None, role_acteur="systeme"):
+    contexte = dict(audit_context or {})
+    contexte["acteur_id"] = actor_id
+    contexte["role_acteur"] = role_acteur if role_acteur in VALID_ROLES else "systeme"
+    return contexte
+
+
+def _enregistrer_audit_auth(
+    action,
+    resultat,
+    audit_context=None,
+    actor_id=None,
+    role_acteur="systeme",
+    type_ressource="auth",
+    ressource_id=None,
+    details=None,
+):
+    contexte = _contexte_audit_acteur(audit_context, actor_id, role_acteur)
+    _, erreur = enregistrer_audit(
+        action=action,
+        type_ressource=type_ressource,
+        ressource_id=ressource_id,
+        resultat=resultat,
+        audit_context=contexte,
+        details=details,
+    )
+    if erreur:
+        LOGGER.warning("auth_audit_failed", extra={"action": action, "audit_error": erreur})
 
 
 def _validate_role(role):
@@ -178,7 +211,7 @@ def _register_prestataire(data, password_hash):
     return _sanitize_user_response(created_user, "prestataire"), None
 
 
-def register_user(data):
+def _register_user_impl(data):
     if not isinstance(data, dict):
         return None, "Donnees invalides."
 
@@ -210,7 +243,36 @@ def register_user(data):
     return _register_prestataire(data, password_hash)
 
 
-def login_user(data):
+def register_user(data, audit_context=None):
+    result, error = _register_user_impl(data)
+    requested_role = data.get("role") if isinstance(data, dict) else None
+
+    if error:
+        _enregistrer_audit_auth(
+            action="auth.register",
+            resultat="echec",
+            audit_context=audit_context,
+            details={
+                "role_demande": requested_role if requested_role in VALID_ROLES else None,
+                "raison": error,
+            },
+        )
+        return result, error
+
+    _enregistrer_audit_auth(
+        action="auth.register",
+        resultat="succes",
+        audit_context=audit_context,
+        actor_id=result.get("id"),
+        role_acteur=result.get("role"),
+        type_ressource=result.get("role"),
+        ressource_id=str(result.get("id")),
+        details={"role": result.get("role")},
+    )
+    return result, error
+
+
+def _login_user_impl(data):
     if not isinstance(data, dict):
         return None, "Donnees invalides."
 
@@ -234,10 +296,10 @@ def login_user(data):
         matching_users.append((role, user))
 
     if len(matching_users) > 1:
-        return None, "Ce courriel correspond a plusieurs comptes. Contactez le support."
+        return None, "Identifiants invalides."
 
     if inactive_match_found and not matching_users:
-        return None, "Compte inactif."
+        return None, "Identifiants invalides."
 
     if not matching_users:
         return None, "Identifiants invalides."
@@ -256,6 +318,35 @@ def login_user(data):
     return response, None
 
 
+def login_user(data, audit_context=None):
+    result, error = _login_user_impl(data)
+
+    if error:
+        _enregistrer_audit_auth(
+            action="auth.login",
+            resultat="echec",
+            audit_context=audit_context,
+            details={
+                "courriel_fourni": bool(data.get("courriel")) if isinstance(data, dict) else False,
+                "raison": error,
+            },
+        )
+        return result, error
+
+    user = result.get("user") or {}
+    _enregistrer_audit_auth(
+        action="auth.login",
+        resultat="succes",
+        audit_context=audit_context,
+        actor_id=user.get("id"),
+        role_acteur=user.get("role"),
+        type_ressource=user.get("role"),
+        ressource_id=str(user.get("id")),
+        details={"role": user.get("role")},
+    )
+    return result, error
+
+
 def logout_user():
     return {"message": "Deconnexion reussie."}, None
 
@@ -272,7 +363,7 @@ def get_current_user(user_id, role):
     return _sanitize_user_response(user, role), None
 
 
-def change_password(user_id, role, data):
+def _change_password_impl(user_id, role, data):
     if not isinstance(data, dict):
         return None, "Donnees invalides."
 
@@ -312,3 +403,19 @@ def change_password(user_id, role, data):
         update_prestataire_password(user_id, new_password_hash)
 
     return {"message": "Mot de passe modifie avec succes."}, None
+
+
+def change_password(user_id, role, data, audit_context=None):
+    result, error = _change_password_impl(user_id, role, data)
+
+    _enregistrer_audit_auth(
+        action="auth.password_changed",
+        resultat="echec" if error else "succes",
+        audit_context=audit_context,
+        actor_id=user_id,
+        role_acteur=role,
+        type_ressource=role if role in VALID_ROLES else "auth",
+        ressource_id=str(user_id) if user_id is not None else None,
+        details={"raison": error} if error else None,
+    )
+    return result, error

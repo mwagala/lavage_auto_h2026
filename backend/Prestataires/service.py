@@ -1,7 +1,9 @@
+import logging
 from datetime import datetime
 
 from ..Clients.repository import get_commentaire_by_reservation
 from ..Clients.repository import get_reservation_by_id
+from ..Commun.journaux.audit_utils import enregistrer_audit
 from ..Commun.serializer import serialize_comments, serialize_timedelta, serialize_reservation, \
     serialize_reservation_prestataire
 from ..Commun.validators import normalize_code_postal, normalize_nas
@@ -46,6 +48,30 @@ ALLOWED_PROFILE_FIELDS = {
 }
 REQUIRED_SERVICE_FIELDS = {"nom", "description", "duree", "prix"}
 REQUIRED_DISPO_FIELDS = {"jour", "statut", "heure_debut", "heure_fin"}
+LOGGER = logging.getLogger(__name__)
+SENSITIVE_PROFILE_FIELDS = {"mot_de_passe", "ancien_mot_de_passe", "nouveau_mot_de_passe", "nas"}
+
+
+def _champs_audites(data):
+    if not isinstance(data, dict):
+        return []
+    return sorted(set(data.keys()) - SENSITIVE_PROFILE_FIELDS)
+
+
+def _audit_prestataire_profile_update(prestataire_id, resultat, audit_context=None, details=None):
+    contexte = dict(audit_context or {})
+    contexte["acteur_id"] = prestataire_id
+    contexte["role_acteur"] = "prestataire"
+    _, erreur = enregistrer_audit(
+        action="profile.updated",
+        type_ressource="prestataire",
+        ressource_id=str(prestataire_id),
+        resultat=resultat,
+        audit_context=contexte,
+        details=details,
+    )
+    if erreur:
+        LOGGER.warning("prestataire_profile_audit_failed", extra={"audit_error": erreur})
 
 
 def _clean_str(value):
@@ -256,7 +282,7 @@ def get_my_profile(prestataire_id: int):
     return prestataire, None
 
 
-def update_my_profile(prestataire_id: int, payload: dict):
+def _update_my_profile_impl(prestataire_id: int, payload: dict):
     prestataire = get_prestataire_by_id(prestataire_id)
     if not prestataire:
         return None, "Prestataire introuvable."
@@ -267,6 +293,21 @@ def update_my_profile(prestataire_id: int, payload: dict):
 
     updated = update_prestataire_profile(prestataire_id, fields)
     return updated, None
+
+
+def update_my_profile(prestataire_id: int, payload: dict, audit_context=None):
+    result, error = _update_my_profile_impl(prestataire_id, payload)
+    details = {"champs": _champs_audites(payload)}
+    if error:
+        details["raison"] = error
+
+    _audit_prestataire_profile_update(
+        prestataire_id=prestataire_id,
+        resultat="echec" if error else "succes",
+        audit_context=audit_context,
+        details=details,
+    )
+    return result, error
 
 
 def list_my_reservations(prestataire_id: int):

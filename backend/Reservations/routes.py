@@ -2,6 +2,7 @@ from flask import Blueprint, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from ..Commun.decorateurs import role_required
+from ..Commun.journaux.audit_utils import construire_contexte_audit
 from ..Commun.reponses import error_response, success_response
 from ..Commun.serializer import serialize_timedelta
 from .service import (
@@ -43,6 +44,15 @@ def _map_reservation_error_to_http_status(error_message):
         return 404
     if error_message == "Acces refuse":
         return 403
+    if error_message == "Impossible d'ecrire le journal d'audit de la reservation":
+        return 500
+    if error_message in {
+        "La cle d'idempotence existe deja avec une requete differente",
+        "Cette creation de reservation est deja en cours",
+        "Cette creation de reservation est deja traitee",
+        "Cette cle d'idempotence est associee a une tentative echouee",
+    }:
+        return 409
     return 400
 
 
@@ -58,9 +68,14 @@ def create_reservation_route():
         return error_response("Acces reserve au client", 403)
 
     payload = _read_payload()
-    result, error = create_reservation_client(actor_id, payload)
+    result, error = create_reservation_client(
+        actor_id,
+        payload,
+        audit_context=construire_contexte_audit(actor_id, actor_role),
+        idempotency_key=request.headers.get("Idempotency-Key"),
+    )
     if error:
-        return error_response(error, 400)
+        return error_response(error, _map_reservation_error_to_http_status(error))
 
     return success_response(result, status=201)
 
@@ -87,7 +102,13 @@ def update_reservation_route(reservation_id):
         return error_response(actor_error[0], actor_error[1])
 
     payload = _read_payload()
-    result, error = update_reservation_any(actor_id, actor_role, reservation_id, payload)
+    result, error = update_reservation_any(
+        actor_id,
+        actor_role,
+        reservation_id,
+        payload,
+        audit_context=construire_contexte_audit(actor_id, actor_role),
+    )
     if error:
         return error_response(error, _map_reservation_error_to_http_status(error))
 
@@ -105,7 +126,12 @@ def update_reservation_status_route(reservation_id):
         return error_response("Acces reserve au prestataire", 403)
 
     payload = _read_payload()
-    result, error = update_reservation_status_prestataire(actor_id, reservation_id, payload)
+    result, error = update_reservation_status_prestataire(
+        actor_id,
+        reservation_id,
+        payload,
+        audit_context=construire_contexte_audit(actor_id, actor_role),
+    )
     if error:
         return error_response(error, _map_reservation_error_to_http_status(error))
 
@@ -119,7 +145,12 @@ def cancel_reservation_route(reservation_id):
     if actor_error:
         return error_response(actor_error[0], actor_error[1])
 
-    result, error = cancel_reservation_any(actor_id, actor_role, reservation_id)
+    result, error = cancel_reservation_any(
+        actor_id,
+        actor_role,
+        reservation_id,
+        audit_context=construire_contexte_audit(actor_id, actor_role),
+    )
     if error:
         return error_response(error, _map_reservation_error_to_http_status(error))
 

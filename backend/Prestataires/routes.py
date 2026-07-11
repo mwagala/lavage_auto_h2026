@@ -3,16 +3,17 @@ from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 
 from .repository import is_service_exist
 from ..Auth.service import change_password
+from ..Commun.journaux.audit_utils import construire_contexte_audit
 from ..Commun.serializer import serialize_timedelta
 from ..Commun.decorateurs import role_required
 from ..Commun.reponses import success_response, error_response
+from ..Reservations.service import update_reservation_status_prestataire
 from .service import (
     get_my_profile,
     update_my_profile,
     list_my_reservations,
     list_my_upcoming_reservations,
     list_my_past_reservations,
-    update_my_reservation_status,
     list_my_disponibilites,
     update_my_disponibilite,
     delete_my_disponibilite,
@@ -51,7 +52,11 @@ def update_my_profile_route():
     prestataire_id = int(get_jwt_identity())
     payload = _get_json_payload()
 
-    result, error = update_my_profile(prestataire_id, payload)
+    result, error = update_my_profile(
+        prestataire_id,
+        payload,
+        audit_context=construire_contexte_audit(prestataire_id, "prestataire"),
+    )
 
     if error:
         status_code = 404 if error == "Prestataire introuvable" else 400
@@ -106,9 +111,16 @@ def update_my_reservation_status_route(reservation_id):
     prestataire_id = int(get_jwt_identity())
     payload = _get_json_payload()
 
-    result, error = update_my_reservation_status(prestataire_id, reservation_id, payload)
+    result, error = update_reservation_status_prestataire(
+        prestataire_id,
+        reservation_id,
+        payload,
+        audit_context=construire_contexte_audit(prestataire_id, "prestataire"),
+    )
 
     if error:
+        if error == "Impossible d'ecrire le journal d'audit de la reservation":
+            return error_response(error, 500)
         if error in {"Reservation introuvable", "Acces refuse"}:
             return error_response(error, 404 if error == "Reservation introuvable" else 403)
         return error_response(error, 400)
@@ -289,7 +301,12 @@ def change_password_route():
     role = get_jwt().get("role")
     data = request.get_json() or {}
 
-    result, error = change_password(user_id, role, data)
+    result, error = change_password(
+        user_id,
+        role,
+        data,
+        audit_context=construire_contexte_audit(user_id, role),
+    )
     if error:
         return error_response(error, 400)
 

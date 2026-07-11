@@ -1,8 +1,16 @@
+import hashlib
+import json
 import logging
+import uuid
 from datetime import datetime
 
 from bd.database import get_connection
-from backend.Commun.idempotence.idempotence_service import reserver_cle_idempotence
+from backend.Commun.idempotence.idempotence_service import (
+    marquer_cle_traitee,
+    reserver_cle_idempotence,
+    trouver_cle_idempotence,
+)
+from backend.Commun.journaux.audit_utils import enregistrer_audit
 from backend.Commun.outbox_events.outbox_service import creer_evenement_outbox
 from .repository import (
     cancel_reservation,
@@ -37,6 +45,8 @@ DAY_NAME_TO_FRENCH = {
 ALLOWED_PRESTATAIRE_STATUSES = {"Assignee", "En cours", "Terminee", "annulee"}
 EDITABLE_STATUSES = {"Assignee"}
 FINAL_STATUSES = {"Terminee", "annulee"}
+IDEMPOTENCY_CREATE_PREFIX = "reservation.create.request"
+AUDIT_RESERVATION_REQUIRED_ERROR = "Impossible d'ecrire le journal d'audit de la reservation"
 
 
 def _parse_date(value):
@@ -70,6 +80,193 @@ def _seconds_to_hms(total_seconds):
     minutes = (total_seconds % 3600) // 60
     seconds = total_seconds % 60
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def _date_to_iso(value):
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _service_lines_for_event(service_lines):
+    return [
+        {
+            "service_id": line.get("service_id"),
+            "prix_applique": line.get("prix_applique"),
+            "duree_prevue": line.get("duree_prevue"),
+            "quantite": line.get("quantite"),
+        }
+        for line in service_lines
+    ]
+
+
+def _build_payload_fingerprint(client_id, payload):
+    normalized = json.dumps(
+        {
+            "client_id": client_id,
+            "payload": payload,
+        },
+        sort_keys=True,
+        default=str,
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _build_request_idempotency_key(client_id, raw_key):
+    if not raw_key:
+        return None
+
+    normalized = str(raw_key).strip()
+    if not normalized:
+        return None
+
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return f"{IDEMPOTENCY_CREATE_PREFIX}:{client_id}:{digest}"
+
+
+def _decode_idempotency_response(value):
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _result_from_idempotency_record(record):
+    response = _decode_idempotency_response(record.get("reponse_json"))
+    reservation_id = response.get("reservation_id") or record.get("ressource_id")
+    if not reservation_id:
+        return None
+    return _build_reservation_response(int(reservation_id))
+
+
+def _handle_existing_create_idempotency(client_id, payload, raw_key):
+    idempotency_key = _build_request_idempotency_key(client_id, raw_key)
+    fingerprint = _build_payload_fingerprint(client_id, payload)
+    if not idempotency_key:
+        return False, None, None, None, fingerprint
+
+    record, error = trouver_cle_idempotence(idempotency_key)
+    if error:
+        return True, None, error, idempotency_key, fingerprint
+
+    if not record:
+        return False, None, None, idempotency_key, fingerprint
+
+    if record.get("empreinte_requete") != fingerprint:
+        return True, None, "La cle d'idempotence existe deja avec une requete differente", idempotency_key, fingerprint
+
+    if record.get("statut") == "traitee":
+        result = _result_from_idempotency_record(record)
+        if result:
+            return True, result, None, idempotency_key, fingerprint
+        return True, None, "Impossible de recuperer la reservation", idempotency_key, fingerprint
+
+    if record.get("statut") in {"reservee", "en_traitement"}:
+        return True, None, "Cette creation de reservation est deja en cours", idempotency_key, fingerprint
+
+    return True, None, "Cette cle d'idempotence est associee a une tentative echouee", idempotency_key, fingerprint
+
+
+def _reserve_create_idempotency_key(client_id, idempotency_key, fingerprint, connection):
+    if not idempotency_key:
+        return None, None
+
+    response, error = reserver_cle_idempotence(
+        cle_idempotence=idempotency_key,
+        type_ressource="reservation_create_request",
+        ressource_id=None,
+        empreinte_requete=fingerprint,
+        connection=connection,
+    )
+    if error:
+        return None, error
+
+    record = response.get("cle")
+    if response.get("cle_creee"):
+        return record, None
+
+    if record.get("empreinte_requete") != fingerprint:
+        return None, "La cle d'idempotence existe deja avec une requete differente"
+
+    if record.get("statut") in {"reservee", "en_traitement"}:
+        return None, "Cette creation de reservation est deja en cours"
+
+    if record.get("statut") == "traitee":
+        return None, "Cette creation de reservation est deja traitee"
+
+    return None, "Cette cle d'idempotence est associee a une tentative echouee"
+
+
+def _reservation_actor_payload(actor_id, actor_role):
+    return {
+        "acteur_id": actor_id,
+        "role_acteur": actor_role,
+    }
+
+
+def _audit_context_for_actor(actor_id, actor_role, audit_context):
+    contexte = dict(audit_context or {})
+    contexte["acteur_id"] = actor_id
+    contexte["role_acteur"] = actor_role
+    return contexte
+
+
+def _record_reservation_audit(
+    action,
+    reservation_id,
+    actor_id,
+    actor_role,
+    details,
+    connection,
+    audit_context=None,
+):
+    return enregistrer_audit(
+        action=action,
+        type_ressource="reservation",
+        ressource_id=str(reservation_id),
+        resultat="succes",
+        audit_context=_audit_context_for_actor(actor_id, actor_role, audit_context),
+        details=details,
+        connection=connection,
+        strict=True,
+    )
+
+
+def _create_reservation_outbox_event(
+    event_type,
+    reservation_id,
+    payload,
+    connection,
+    cle_idempotence=None,
+):
+    event_key = cle_idempotence or f"{event_type}:{reservation_id}:{uuid.uuid4()}"
+    idempotency_response, key_error = reserver_cle_idempotence(
+        cle_idempotence=event_key,
+        type_ressource="reservation_event",
+        ressource_id=str(reservation_id),
+        empreinte_requete=event_key,
+        connection=connection,
+    )
+    if key_error or not idempotency_response.get("cle_creee"):
+        return None, key_error or "Impossible de reserver la cle d'idempotence de l'evenement"
+
+    return creer_evenement_outbox(
+        type_evenement=event_type,
+        type_ressource="reservation",
+        ressource_id=str(reservation_id),
+        cle_idempotence=event_key,
+        donnees_json=payload,
+        connection=connection,
+    )
 
 
 def _is_actor_allowed_on_reservation(actor_id, actor_role, reservation):
@@ -211,7 +408,11 @@ def _save_reservation_and_services(
     prestataire_id,
     reservation_date,
     heure_debut,
-    service_lines
+    service_lines,
+    actor_id=None,
+    actor_role=None,
+    audit_context=None,
+    previous_reservation=None,
 ):
     connection = get_connection()
 
@@ -235,6 +436,49 @@ def _save_reservation_and_services(
                 quantite=line["quantite"],
                 connection=connection
             )
+
+        event_payload = {
+            "reservation_id": reservation_id,
+            "client_id": previous_reservation.get("client_id") if previous_reservation else None,
+            "prestataire_id": prestataire_id,
+            "ancienne_date": _date_to_iso(previous_reservation.get("date")) if previous_reservation else None,
+            "date": _date_to_iso(reservation_date),
+            "ancienne_heure_debut": previous_reservation.get("heure_debut") if previous_reservation else None,
+            "heure_debut": heure_debut,
+            "ancien_prestataire_id": previous_reservation.get("prestataire_id") if previous_reservation else None,
+            "services": _service_lines_for_event(service_lines),
+            "acteur": _reservation_actor_payload(actor_id, actor_role),
+        }
+        evenement, event_error = _create_reservation_outbox_event(
+            event_type="reservation.updated",
+            reservation_id=reservation_id,
+            payload=event_payload,
+            connection=connection,
+        )
+        if event_error or not evenement:
+            connection.rollback()
+            return event_error or "Impossible de creer l'evenement outbox de reservation"
+
+        _, audit_error = _record_reservation_audit(
+            action="reservation.updated",
+            reservation_id=reservation_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            details={
+                "ancien_prestataire_id": event_payload["ancien_prestataire_id"],
+                "prestataire_id": prestataire_id,
+                "ancienne_date": event_payload["ancienne_date"],
+                "date": event_payload["date"],
+                "ancienne_heure_debut": event_payload["ancienne_heure_debut"],
+                "heure_debut": heure_debut,
+                "services_count": len(service_lines),
+            },
+            connection=connection,
+            audit_context=audit_context,
+        )
+        if audit_error:
+            connection.rollback()
+            return AUDIT_RESERVATION_REQUIRED_ERROR
 
         connection.commit()
         return None
@@ -261,9 +505,15 @@ def _declencher_consumer_outbox_apres_commit(limit=10):
         logger.exception("Impossible d'envoyer immediatement la tache Outbox.")
 
 
-def create_reservation_client(client_id, payload):
+def create_reservation_client(client_id, payload, audit_context=None, idempotency_key=None):
     if not isinstance(payload, dict):
         return None, "Donnees invalides"
+
+    handled, cached_result, idempotency_error, request_key, request_fingerprint = (
+        _handle_existing_create_idempotency(client_id, payload, idempotency_key)
+    )
+    if handled:
+        return cached_result, idempotency_error
 
     prestataire_id = payload.get("prestataire_id")
     date_value = payload.get("date")
@@ -309,8 +559,19 @@ def create_reservation_client(client_id, payload):
     connection = get_connection()
     reservation_id = None
     heure_debut_serialisee = heure_debut.strftime("%H:%M:%S")
+    request_key_record = None
 
     try:
+        request_key_record, request_key_error = _reserve_create_idempotency_key(
+            client_id=client_id,
+            idempotency_key=request_key,
+            fingerprint=request_fingerprint,
+            connection=connection,
+        )
+        if request_key_error:
+            connection.rollback()
+            return None, request_key_error
+
         # Cette transaction contient la reservation, ses services, la cle
         # d'idempotence et l'evenement Outbox. Tout reussit ensemble ou tout
         # est annule par rollback.
@@ -336,36 +597,21 @@ def create_reservation_client(client_id, payload):
                 connection=connection
             )
 
-        # La cle rend l'evenement unique. Si ce flux est rejoue, on evite de
-        # traiter deux fois la meme reservation.created.
-        cle_idempotence = f"reservation.created:{reservation_id}"
-        reservation_key, key_error = reserver_cle_idempotence(
-            cle_idempotence=cle_idempotence,
-            type_ressource="reservation",
-            ressource_id=str(reservation_id),
-            empreinte_requete=cle_idempotence,
-            connection=connection
-        )
-        if key_error or not reservation_key.get("cle_creee"):
-            # Si la cle ne peut pas etre creee, on annule aussi la reservation.
-            connection.rollback()
-            return None, key_error or "Impossible de reserver la cle d'idempotence de l'evenement"
-
         # L'evenement est cree dans la meme transaction. Le consumer Celery le
         # lira plus tard pour declencher les traitements asynchrones.
-        evenement, event_error = creer_evenement_outbox(
-            type_evenement="reservation.created",
-            type_ressource="reservation",
-            ressource_id=str(reservation_id),
-            cle_idempotence=cle_idempotence,
-            donnees_json={
+        evenement, event_error = _create_reservation_outbox_event(
+            event_type="reservation.created",
+            reservation_id=reservation_id,
+            cle_idempotence=f"reservation.created:{reservation_id}",
+            payload={
                 "reservation_id": reservation_id,
                 "client_id": client_id,
                 "prestataire_id": prestataire_id,
                 "date": reservation_date.isoformat(),
                 "heure_debut": heure_debut_serialisee,
                 "heure_fin": heure_fin,
-                "services": service_lines,
+                "services": _service_lines_for_event(service_lines),
+                "acteur": _reservation_actor_payload(client_id, "client"),
             },
             connection=connection
         )
@@ -374,6 +620,33 @@ def create_reservation_client(client_id, payload):
             # pas perdre le signal metier.
             connection.rollback()
             return None, event_error or "Impossible de creer l'evenement outbox de reservation"
+
+        _, audit_error = _record_reservation_audit(
+            action="reservation.created",
+            reservation_id=reservation_id,
+            actor_id=client_id,
+            actor_role="client",
+            details={
+                "prestataire_id": prestataire_id,
+                "date": reservation_date.isoformat(),
+                "heure_debut": heure_debut_serialisee,
+                "heure_fin": heure_fin,
+                "services": _service_lines_for_event(service_lines),
+                "idempotency_key_fournie": bool(request_key),
+            },
+            connection=connection,
+            audit_context=audit_context,
+        )
+        if audit_error:
+            connection.rollback()
+            return None, AUDIT_RESERVATION_REQUIRED_ERROR
+
+        if request_key_record:
+            marquer_cle_traitee(
+                request_key_record["id"],
+                {"reservation_id": reservation_id},
+                connection=connection,
+            )
 
         connection.commit()
     except Exception as exc:
@@ -406,7 +679,7 @@ def get_reservation_detail_for_actor(actor_id, actor_role, reservation_id):
     return detail, None
 
 
-def update_reservation_any(actor_id, actor_role, reservation_id, payload):
+def update_reservation_any(actor_id, actor_role, reservation_id, payload, audit_context=None):
     if not isinstance(payload, dict):
         return None, "Donnees invalides"
 
@@ -482,10 +755,16 @@ def update_reservation_any(actor_id, actor_role, reservation_id, payload):
         prestataire_id=new_prestataire_id,
         reservation_date=new_date,
         heure_debut=new_start_time.strftime("%H:%M:%S"),
-        service_lines=service_lines
+        service_lines=service_lines,
+        actor_id=actor_id,
+        actor_role=actor_role,
+        audit_context=audit_context,
+        previous_reservation=reservation,
     )
     if save_error:
         return None, save_error
+
+    _declencher_consumer_outbox_apres_commit()
 
     result = _build_reservation_response(reservation_id)
     if not result:
@@ -494,7 +773,7 @@ def update_reservation_any(actor_id, actor_role, reservation_id, payload):
     return result, None
 
 
-def update_reservation_status_prestataire(prestataire_id, reservation_id, payload):
+def update_reservation_status_prestataire(prestataire_id, reservation_id, payload, audit_context=None):
     if not isinstance(payload, dict):
         return None, "Donnees invalides"
 
@@ -510,6 +789,9 @@ def update_reservation_status_prestataire(prestataire_id, reservation_id, payloa
         return None, "Acces refuse"
 
     current_status = reservation["statut"]
+    if current_status == new_status:
+        return _build_reservation_response(reservation_id), None
+
     if current_status in FINAL_STATUSES:
         return None, "Cette reservation ne peut plus changer de statut"
 
@@ -519,7 +801,54 @@ def update_reservation_status_prestataire(prestataire_id, reservation_id, payloa
     if current_status == "En cours" and new_status not in {"Terminee", "annulee", "En cours"}:
         return None, "Transition de statut invalide"
 
-    update_reservation_status(reservation_id, new_status)
+    connection = get_connection()
+    try:
+        update_reservation_status(reservation_id, new_status, connection=connection)
+
+        event_payload = {
+            "reservation_id": reservation_id,
+            "client_id": reservation.get("client_id"),
+            "prestataire_id": prestataire_id,
+            "ancien_statut": current_status,
+            "nouveau_statut": new_status,
+            "date": _date_to_iso(reservation.get("date")),
+            "heure_debut": reservation.get("heure_debut"),
+            "acteur": _reservation_actor_payload(prestataire_id, "prestataire"),
+        }
+        evenement, event_error = _create_reservation_outbox_event(
+            event_type="reservation.status_changed",
+            reservation_id=reservation_id,
+            payload=event_payload,
+            connection=connection,
+        )
+        if event_error or not evenement:
+            connection.rollback()
+            return None, event_error or "Impossible de creer l'evenement outbox de reservation"
+
+        _, audit_error = _record_reservation_audit(
+            action="reservation.status_changed",
+            reservation_id=reservation_id,
+            actor_id=prestataire_id,
+            actor_role="prestataire",
+            details={
+                "ancien_statut": current_status,
+                "nouveau_statut": new_status,
+            },
+            connection=connection,
+            audit_context=audit_context,
+        )
+        if audit_error:
+            connection.rollback()
+            return None, AUDIT_RESERVATION_REQUIRED_ERROR
+
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        return None, str(exc)
+    finally:
+        connection.close()
+
+    _declencher_consumer_outbox_apres_commit()
 
     result = _build_reservation_response(reservation_id)
     if not result:
@@ -528,7 +857,7 @@ def update_reservation_status_prestataire(prestataire_id, reservation_id, payloa
     return result, None
 
 
-def cancel_reservation_any(actor_id, actor_role, reservation_id):
+def cancel_reservation_any(actor_id, actor_role, reservation_id, audit_context=None):
     reservation = get_reservation_by_id(reservation_id)
     if not reservation:
         return None, "Reservation introuvable"
@@ -549,7 +878,55 @@ def cancel_reservation_any(actor_id, actor_role, reservation_id):
         if reservation["statut"] not in {"Assignee", "En cours"}:
             return None, "Cette reservation ne peut plus etre annulee"
 
-    cancel_reservation(reservation_id)
+    previous_status = reservation["statut"]
+    connection = get_connection()
+    try:
+        cancel_reservation(reservation_id, connection=connection)
+
+        event_payload = {
+            "reservation_id": reservation_id,
+            "client_id": reservation.get("client_id"),
+            "prestataire_id": reservation.get("prestataire_id"),
+            "ancien_statut": previous_status,
+            "nouveau_statut": "annulee",
+            "date": _date_to_iso(reservation.get("date")),
+            "heure_debut": reservation.get("heure_debut"),
+            "acteur": _reservation_actor_payload(actor_id, actor_role),
+        }
+        evenement, event_error = _create_reservation_outbox_event(
+            event_type="reservation.cancelled",
+            reservation_id=reservation_id,
+            payload=event_payload,
+            connection=connection,
+        )
+        if event_error or not evenement:
+            connection.rollback()
+            return None, event_error or "Impossible de creer l'evenement outbox de reservation"
+
+        _, audit_error = _record_reservation_audit(
+            action="reservation.cancelled",
+            reservation_id=reservation_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            details={
+                "ancien_statut": previous_status,
+                "nouveau_statut": "annulee",
+            },
+            connection=connection,
+            audit_context=audit_context,
+        )
+        if audit_error:
+            connection.rollback()
+            return None, AUDIT_RESERVATION_REQUIRED_ERROR
+
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        return None, str(exc)
+    finally:
+        connection.close()
+
+    _declencher_consumer_outbox_apres_commit()
 
     result = _build_reservation_response(reservation_id)
     if not result:

@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from flask import Flask
 from flask_cors import CORS
 
@@ -18,9 +20,16 @@ from frontend.route.public import public_bp
 
 
 def _configure_app_settings(app):
+    Config.validate()
     app.config["SECRET_KEY"] = Config.SECRET_KEY
     app.config["JWT_SECRET_KEY"] = Config.JWT_SECRET_KEY
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(
+        minutes=Config.JWT_ACCESS_TOKEN_EXPIRES_MINUTES
+    )
     app.config["LOG_LEVEL"] = Config.LOG_LEVEL
+    app.config["TESTING"] = Config.TESTING
+    app.config["DEBUG"] = Config.DEBUG
+    app.config["SECURITY_HEADERS_ENABLED"] = Config.SECURITY_HEADERS_ENABLED
 
 
 def _register_blueprints(app):
@@ -36,6 +45,19 @@ def _register_blueprints(app):
     app.register_blueprint(prestataire_front_bp)
 
 
+def _configure_cors(app):
+    if not Config.CORS_ALLOWED_ORIGINS:
+        return
+
+    CORS(
+        app,
+        origins=Config.CORS_ALLOWED_ORIGINS,
+        supports_credentials=False,
+        allow_headers=["Content-Type", "Authorization", "X-Correlation-ID"],
+        expose_headers=["X-Correlation-ID"],
+    )
+
+
 def create_app():
     app = Flask(
         __name__,
@@ -46,7 +68,7 @@ def create_app():
     _configure_app_settings(app)
     configure_logging(app)
 
-    CORS(app)
+    _configure_cors(app)
     bcrypt.init_app(app)
     jwt.init_app(app)
 
@@ -59,4 +81,4 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=Config.DEBUG)

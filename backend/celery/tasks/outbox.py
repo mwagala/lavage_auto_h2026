@@ -1,4 +1,5 @@
 from backend.celery.celery_app import celery_app
+from bd.config import Config
 from backend.Commun.idempotence.idempotence_service import (
     marquer_cle_echouee,
     marquer_cle_en_traitement,
@@ -9,8 +10,9 @@ from backend.Commun.idempotence.idempotence_service import (
 from backend.Commun.outbox_events.outbox_dispatcher import dispatch_evenement_outbox
 from backend.Commun.outbox_events.outbox_repository import (
     claim_pending_events,
+    release_stale_processing_events,
+    update_event_status_after_failure,
     update_event_status_to_completed,
-    update_event_status_to_failed,
 )
 
 
@@ -42,13 +44,32 @@ def _verifier_cle_idempotence(evenement):
     return reponse.get("cle"), None
 
 
+def _enregistrer_echec_evenement(evenement, message):
+    evenement_maj = update_event_status_after_failure(
+        event=evenement,
+        error_message=message,
+        max_attempts=Config.OUTBOX_MAX_ATTEMPTS,
+        retry_backoff_seconds=Config.OUTBOX_RETRY_BACKOFF_SECONDS,
+        max_retry_delay_seconds=Config.OUTBOX_MAX_RETRY_DELAY_SECONDS,
+    )
+    statut = evenement_maj.get("statut") if evenement_maj else "echoue"
+    resultat = "echoue" if statut == "echoue" else "reprogramme"
+
+    return {
+        "event_id": evenement["id"],
+        "statut": resultat,
+        "erreur": message,
+        "tentatives": evenement_maj.get("tentatives") if evenement_maj else None,
+        "prochaine_tentative": evenement_maj.get("disponible_a") if evenement_maj else None,
+    }
+
+
 def _traiter_evenement_outbox(evenement):
     # Cette fonction traite un seul evenement: verifier l'idempotence,
     # dispatcher, puis mettre a jour les statuts.
     cle, error = _verifier_cle_idempotence(evenement)
     if error:
-        update_event_status_to_failed(evenement["id"], error)
-        return {"event_id": evenement["id"], "statut": "echoue", "erreur": error}
+        return _enregistrer_echec_evenement(evenement, error)
 
     statut_cle = cle.get("statut")
     if statut_cle == "traitee":
@@ -59,8 +80,7 @@ def _traiter_evenement_outbox(evenement):
 
     if statut_cle == "en_traitement":
         error = "La cle d'idempotence est deja en traitement"
-        update_event_status_to_failed(evenement["id"], error)
-        return {"event_id": evenement["id"], "statut": "echoue", "erreur": error}
+        return _enregistrer_echec_evenement(evenement, error)
 
     try:
         # A partir d'ici, la cle protege le traitement: si le dispatcher echoue,
@@ -73,18 +93,26 @@ def _traiter_evenement_outbox(evenement):
     except Exception as exc:
         message = str(exc)
         marquer_cle_echouee(cle["id"])
-        update_event_status_to_failed(evenement["id"], message)
-        return {"event_id": evenement["id"], "statut": "echoue", "erreur": message}
+        return _enregistrer_echec_evenement(evenement, message)
 
 
 @celery_app.task(name="outbox.process_pending_events")
-def process_pending_outbox_events(limit=10):
+def process_pending_outbox_events(limit=None):
     # La tache prend un petit lot d'evenements pour eviter de bloquer le worker
     # trop longtemps et pour faciliter les reprises.
-    evenements = claim_pending_events(limit=limit)
+    batch_limit = limit or Config.OUTBOX_BATCH_SIZE
+    evenements_repris = release_stale_processing_events(
+        stale_processing_seconds=Config.OUTBOX_STALE_PROCESSING_SECONDS,
+        max_attempts=Config.OUTBOX_MAX_ATTEMPTS,
+        retry_backoff_seconds=Config.OUTBOX_RETRY_BACKOFF_SECONDS,
+        max_retry_delay_seconds=Config.OUTBOX_MAX_RETRY_DELAY_SECONDS,
+        limit=Config.OUTBOX_STALE_RESET_LIMIT,
+    )
+    evenements = claim_pending_events(limit=batch_limit)
     resultats = [_traiter_evenement_outbox(evenement) for evenement in evenements]
 
     return {
+        "nombre_evenements_repris": len(evenements_repris),
         "nombre_evenements": len(evenements),
         "resultats": resultats,
     }

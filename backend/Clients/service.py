@@ -1,5 +1,7 @@
+import logging
 from datetime import datetime
 
+from ..Commun.journaux.audit_utils import enregistrer_audit
 from ..Commun.serializer import (
     serialize_comments,
     serialize_facture,
@@ -42,6 +44,30 @@ VALID_UPDATE_FIELDS = [
     "adresse_province",
     "adresse_code_postal"
 ]
+LOGGER = logging.getLogger(__name__)
+SENSITIVE_PROFILE_FIELDS = {"mot_de_passe", "ancien_mot_de_passe", "nouveau_mot_de_passe", "nas"}
+
+
+def _champs_audites(data):
+    if not isinstance(data, dict):
+        return []
+    return sorted(set(data.keys()) - SENSITIVE_PROFILE_FIELDS)
+
+
+def _audit_client_profile_update(client_id, resultat, audit_context=None, details=None):
+    contexte = dict(audit_context or {})
+    contexte["acteur_id"] = client_id
+    contexte["role_acteur"] = "client"
+    _, erreur = enregistrer_audit(
+        action="profile.updated",
+        type_ressource="client",
+        ressource_id=str(client_id),
+        resultat=resultat,
+        audit_context=contexte,
+        details=details,
+    )
+    if erreur:
+        LOGGER.warning("client_profile_audit_failed", extra={"audit_error": erreur})
 
 
 def _parse_iso_date(value):
@@ -89,7 +115,7 @@ def get_client_profile(client_id):
     return client, None
 
 
-def update_client_profile(client_id, data):
+def _update_client_profile_impl(client_id, data):
     if not isinstance(data, dict):
         return None, "Donnees invalides."
 
@@ -115,6 +141,21 @@ def update_client_profile(client_id, data):
 
     updated_client = get_client_by_id(client_id)
     return updated_client, None
+
+
+def update_client_profile(client_id, data, audit_context=None):
+    result, error = _update_client_profile_impl(client_id, data)
+    details = {"champs": _champs_audites(data)}
+    if error:
+        details["raison"] = error
+
+    _audit_client_profile_update(
+        client_id=client_id,
+        resultat="echec" if error else "succes",
+        audit_context=audit_context,
+        details=details,
+    )
+    return result, error
 
 
 def _synchroniser_reservations_passees(client_id):

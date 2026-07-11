@@ -3,10 +3,11 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from ..Auth.service import change_password
 from ..Commun.decorateurs import role_required
+from ..Commun.journaux.audit_utils import construire_contexte_audit
 from ..Commun.reponses import error_response, success_response
 from ..Commun.serializer import serialize_reservation
+from ..Reservations.service import cancel_reservation_any
 from .service import (
-    cancel_reservation,
     create_commentaire,
     get_client_profile,
     get_commentaire_me,
@@ -48,8 +49,12 @@ def _read_payload():
 def _error_status(error_message):
     if error_message in NOT_FOUND_ERRORS:
         return 404
-    if error_message == "Acces refuse.":
+    if error_message in {"Acces refuse.", "Acces refuse"}:
         return 403
+    if error_message in {"Reservation introuvable", "Facture introuvable", "Commentaire introuvable"}:
+        return 404
+    if error_message == "Impossible d'ecrire le journal d'audit de la reservation":
+        return 500
     return 400
 
 
@@ -85,7 +90,11 @@ def update_my_profile():
         return role_error
 
     payload = _read_payload()
-    result, error = update_client_profile(user_id, payload)
+    result, error = update_client_profile(
+        user_id,
+        payload,
+        audit_context=construire_contexte_audit(user_id, role),
+    )
     if error:
         return error_response(error, _error_status(error))
 
@@ -180,7 +189,12 @@ def cancel_reservation_route(reservation_id):
     if role not in {"client", "prestataire"}:
         return error_response("Acces refuse.", 403)
 
-    result, error = cancel_reservation(reservation_id, user_id, role)
+    result, error = cancel_reservation_any(
+        user_id,
+        role,
+        reservation_id,
+        audit_context=construire_contexte_audit(user_id, role),
+    )
     if error:
         return error_response(error, _error_status(error))
 
@@ -257,7 +271,12 @@ def change_password_route():
     user_id, role = _read_actor()
     payload = _read_payload()
 
-    result, error = change_password(user_id, role, payload)
+    result, error = change_password(
+        user_id,
+        role,
+        payload,
+        audit_context=construire_contexte_audit(user_id, role),
+    )
     if error:
         return error_response(error, 400)
 

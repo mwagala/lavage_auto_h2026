@@ -50,7 +50,7 @@ Application web pour gerer une plateforme de reservation de lavage auto a domici
 
 ## 2) Roadmap des fonctionnalites a ajouter
 
-Source: [docs/roadmap-fonctionnalites-stack-actuelle.md](./docs/roadmap-fonctionnalites-stack-actuelle.md)
+La roadmap de pilotage est conservee hors du depot distant.
 
 1. Fondations (Redis + Celery + outbox + logs) - livree
 2. 2FA (TOTP + recovery codes + fallback SMS) - planification ouverte
@@ -62,9 +62,6 @@ Source: [docs/roadmap-fonctionnalites-stack-actuelle.md](./docs/roadmap-fonction
 8. Entente de service (generation + signature)
 9. Photos et documents cloud (S3 presigne)
 10. QA + mise en production progressive
-
-Version diagrammes (clair, HTML):
-- [docs/roadmap-fonctionnalites-stack-actuelle-diagrammes.html](./docs/roadmap-fonctionnalites-stack-actuelle-diagrammes.html)
 
 ## 3) Prerequis
 
@@ -273,7 +270,7 @@ extensions.py
 
 ## 11) Notes
 
-- Le projet est en cours d'evolution (voir roadmap).
+- Le projet est en cours d'evolution selon la roadmap locale de pilotage.
 - La roadmap historique mentionne MySQL, mais ce depot implemente actuellement PostgreSQL. Les scripts, migrations et exemples locaux suivent PostgreSQL.
 - Une execution locale complete necessite PostgreSQL actif et correctement configure.
 - Redis doit etre actif pour les workers Celery et le traitement Outbox asynchrone.

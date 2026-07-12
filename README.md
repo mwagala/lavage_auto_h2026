@@ -358,7 +358,7 @@ Etapes recommandees pour rendre l'application testable par des recruteurs:
 
 1. Pousser la branche `master` sur GitHub et verifier que GitHub Actions passe.
 2. Dans Render, creer un nouveau Blueprint depuis ce depot.
-3. Selectionner `render.yaml`, laisser Render creer les services, puis verifier les couts avant validation: le web peut utiliser le plan gratuit, mais les workers et PostgreSQL peuvent necessiter un plan payant selon l'offre Render active.
+3. Selectionner `render.yaml`, laisser Render creer les services, puis verifier les couts avant validation: le web, PostgreSQL et Key Value sont configures en gratuit pour le demo, mais les workers Celery utilisent `starter` car Render ne propose pas de background workers gratuits.
 4. Attendre le premier deploiement. Le hook initial lance `python -m scripts.bootstrap` pour creer le schema et peupler les donnees demo si la base est vide.
 5. Ouvrir l'URL publique `https://lavage-auto-web.onrender.com` ou celle attribuee par Render.
 6. Tester `/health` puis `/health/readiness`.

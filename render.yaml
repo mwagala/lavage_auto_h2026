@@ -1,0 +1,174 @@
+previews:
+  generation: manual
+
+services:
+  - type: keyvalue
+    name: lavage-auto-redis
+    region: oregon
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
+  - type: web
+    name: lavage-auto-web
+    runtime: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: sh -c "gunicorn -b 0.0.0.0:${PORT:-10000} app:app"
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    initialDeployHook: python -m scripts.bootstrap
+    envVars:
+      - fromGroup: lavage-auto-production-common
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lavage-auto-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: lavage-auto-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: keyvalue
+          name: lavage-auto-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: keyvalue
+          name: lavage-auto-redis
+          property: connectionString
+
+  - type: worker
+    name: lavage-auto-worker
+    runtime: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A backend.celery.celery_app:celery_app worker -l INFO --pool=solo
+    autoDeployTrigger: checksPass
+    envVars:
+      - fromGroup: lavage-auto-production-common
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lavage-auto-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: lavage-auto-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: keyvalue
+          name: lavage-auto-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: keyvalue
+          name: lavage-auto-redis
+          property: connectionString
+
+  - type: worker
+    name: lavage-auto-beat
+    runtime: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A backend.celery.celery_app:celery_app beat -l INFO --schedule /tmp/celerybeat-schedule
+    autoDeployTrigger: checksPass
+    envVars:
+      - fromGroup: lavage-auto-production-common
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lavage-auto-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: lavage-auto-redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: keyvalue
+          name: lavage-auto-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: keyvalue
+          name: lavage-auto-redis
+          property: connectionString
+
+databases:
+  - name: lavage-auto-db
+    region: oregon
+    plan: basic-256mb
+    databaseName: lavage_auto
+    user: lavage_auto_app
+    postgresMajorVersion: "16"
+    ipAllowList: []
+
+envVarGroups:
+  - name: lavage-auto-production-common
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: TESTING
+        value: "False"
+      - key: DEBUG
+        value: "False"
+      - key: FLASK_DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ACCESS_TOKEN_EXPIRES_MINUTES
+        value: "120"
+      - key: CORS_ALLOWED_ORIGINS
+        value: ""
+      - key: SECURITY_HEADERS_ENABLED
+        value: "True"
+      - key: RATE_LIMITING_ENABLED
+        value: "True"
+      - key: RATE_LIMITING_BACKEND
+        value: redis
+      - key: RATE_LIMITING_REDIS_TIMEOUT_SECONDS
+        value: "1"
+      - key: DB_CONNECT_TIMEOUT
+        value: "5"
+      - key: HEALTH_CHECK_TIMEOUT
+        value: "1"
+      - key: HEALTH_CHECK_CELERY_WORKER
+        value: "False"
+      - key: OUTBOX_CONSUMER_INTERVAL_SECONDS
+        value: "60"
+      - key: OUTBOX_BATCH_SIZE
+        value: "10"
+      - key: OUTBOX_MAX_ATTEMPTS
+        value: "5"
+      - key: OUTBOX_RETRY_BACKOFF_SECONDS
+        value: "60"
+      - key: OUTBOX_MAX_RETRY_DELAY_SECONDS
+        value: "3600"
+      - key: OUTBOX_STALE_PROCESSING_SECONDS
+        value: "900"
+      - key: OUTBOX_STALE_RESET_LIMIT
+        value: "100"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: CELERY_TASK_ALWAYS_EAGER
+        value: "False"
+      - key: BOOTSTRAP_AUTO_SEED
+        value: "True"
+      - key: BOOTSTRAP_APPLY_SCHEMA
+        value: "True"
+      - key: BOOTSTRAP_RESET_DEMO_DATA
+        value: "False"
+      - key: BOOTSTRAP_TIMEOUT_SECONDS
+        value: "90"

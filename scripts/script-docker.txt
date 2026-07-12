@@ -1,63 +1,51 @@
-1. Creer et demarrer le container PostgreSQL:
+Demarrage Docker recommande
+===========================
 
-docker run -d --name postgres-container -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=change_me -e POSTGRES_DB=lavage_auto -p 5432:5432 -v postgres-data:/var/lib/postgresql/data postgres:16
+Depuis la racine du projet:
 
-2. Verifier que PostgreSQL est pret:
+docker compose up --build
 
-docker exec postgres-container pg_isready -U postgres -d lavage_auto
+Cette commande demarre:
+- PostgreSQL 16
+- Redis 7
+- bootstrap schema + donnees demo si la base est vide
+- Flask
+- Celery worker
+- Celery Beat
 
-3. Creer et demarrer Redis:
+Application:
+- http://127.0.0.1:5000
 
-.\scripts\run_redis.ps1
+Commandes utiles:
 
-Alternative Docker directe:
+docker compose ps
+docker compose logs -f web
+docker compose exec postgres psql -U postgres -d lavage_auto
+docker compose exec redis redis-cli ping
+docker compose down
+docker compose down -v
 
-docker run -d --name lavage-auto-redis -p 6379:6379 redis:7-alpine redis-server --appendonly yes
+Variables utiles:
 
-4. Verifier que Redis repond:
+docker compose -p lavage-auto-dev up --build
+APP_PORT=5050 docker compose up --build
+BOOTSTRAP_AUTO_SEED=false docker compose up --build
+BOOTSTRAP_RESET_DEMO_DATA=true docker compose up --build bootstrap
 
-docker exec lavage-auto-redis redis-cli ping
+PowerShell:
 
-5. Copier le schema PostgreSQL dans le container:
+$env:APP_PORT="5050"; docker compose up --build
+$env:BOOTSTRAP_AUTO_SEED="false"; docker compose up --build
 
-docker cp bd/init.sql postgres-container:/tmp/init.sql
+Alternative persistante:
 
-6. Initialiser ou reinitialiser le schema de la base:
-
-docker exec -i postgres-container psql -U postgres -d lavage_auto -f /tmp/init.sql
-
-7. Verifier les tables creees:
-
-docker exec -it postgres-container psql -U postgres -d lavage_auto -c "\dt"
-
-8. Peupler les donnees de test depuis le projet:
-
-.\.venv\Scripts\python.exe -m bd.peuplement
-
-9. Lancer Flask:
-
-.\scripts\run_flask.ps1
-
-10. Lancer le worker Celery dans un autre terminal:
-
-.\scripts\run_celery_worker.ps1
-
-11. Lancer Celery Beat dans un troisieme terminal:
-
-.\scripts\run_celery_beat.ps1
+Copier .env.example vers .env puis adapter APP_PORT ou les variables BOOTSTRAP_*.
 
 Notes:
-- Les valeurs ci-dessus sont des exemples. Utilise les memes valeurs dans ton `.env` local:
-  APP_ENV=development
-  DB_HOST=localhost
-  DB_USER=postgres
-  DB_PASSWORD=change_me
-  DB_NAME=lavage_auto
-  DB_PORT=5432
-  REDIS_URL=redis://localhost:6379/0
-  CELERY_BROKER_URL=redis://localhost:6379/0
-  CELERY_RESULT_BACKEND=redis://localhost:6379/1
-- Pour repartir de zero, supprimer le container et le volume:
-  docker rm -f postgres-container
-  docker volume rm postgres-data
-  docker rm -f lavage-auto-redis
+- Compose ne fixe ni container_name ni nom d'image applicative.
+- Utiliser -p permet d'isoler plusieurs installations ou clones sur la meme machine.
+- Seul le port applicatif est expose sur l'hote par defaut.
+- PostgreSQL et Redis restent dans le reseau Docker pour eviter les conflits locaux.
+- docker compose down conserve les volumes PostgreSQL et Redis.
+- docker compose down -v supprime les volumes et repart de zero.
+- Le dossier docs est volontairement exclu de l'image Docker.

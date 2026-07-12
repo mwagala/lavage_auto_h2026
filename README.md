@@ -1,5 +1,7 @@
 # Plateforme Service Lavage Auto a Domicile
 
+[![CI](https://github.com/mwagala/lavage_auto_h2026/actions/workflows/ci.yml/badge.svg)](https://github.com/mwagala/lavage_auto_h2026/actions/workflows/ci.yml)
+
 Application web pour gerer une plateforme de reservation de lavage auto a domicile.
 
 - Backend: Flask + JWT
@@ -46,6 +48,7 @@ Application web pour gerer une plateforme de reservation de lavage auto a domici
 - Scripts PowerShell pour Flask, Redis, Celery worker et Celery Beat
 - Suite `pytest` pour les fondations et tests integration PostgreSQL/Redis
 - Rate limiting login/register avec backend Redis et fallback memoire limite aux environnements dev/test
+- Image Docker production avec Gunicorn et Blueprint Render pour web + worker + beat + PostgreSQL + Redis
 - Etape 1 fondations livree: compilation, tests unitaires, integration transactionnelle reservation + audit + Outbox et revue securite finale passent; P2 securite planifies pour etape 10 / production progressive
 
 ## 2) Roadmap des fonctionnalites a ajouter
@@ -65,12 +68,51 @@ La roadmap de pilotage est conservee hors du depot distant.
 
 ## 3) Prerequis
 
-- Python 3.11+ (ou version compatible avec les dependances)
-- PostgreSQL 14+
-- Redis 7+ ou Docker pour lancer Redis localement
-- pip
+- Option portable recommandee: Docker Desktop avec Docker Compose v2.
+- Option locale manuelle: Python 3.11+, PostgreSQL 14+, Redis 7+ et pip.
 
-## 4) Installation
+## 4) Demarrage rapide portable
+
+Une seule commande demarre toute la pile: PostgreSQL, Redis, Flask, Celery worker, Celery Beat, schema SQL et donnees demo si la base est vide.
+
+```bash
+docker compose up --build
+```
+
+Application:
+- `http://127.0.0.1:5000`
+
+Services inclus:
+- `postgres`: PostgreSQL 16 avec volume persistant `postgres-data`, accessible aux autres services Compose.
+- `redis`: Redis 7 avec volume persistant `redis-data`, accessible aux autres services Compose.
+- `bootstrap`: attend PostgreSQL/Redis, verifie le schema et peuple les donnees demo si necessaire.
+- `web`: application Flask.
+- `worker`: worker Celery.
+- `beat`: planificateur Celery Beat pour le consumer Outbox.
+
+Commandes utiles:
+
+```bash
+docker compose ps
+docker compose logs -f web
+docker compose exec postgres psql -U postgres -d lavage_auto
+docker compose exec redis redis-cli ping
+docker compose down
+docker compose down -v
+```
+
+Notes:
+- Compose ne fixe ni `container_name` ni nom d'image applicative. Les noms sont derives du projet Compose courant pour eviter les collisions avec des images ou conteneurs deja installes.
+- Pour isoler explicitement une installation, utiliser un nom de projet Compose: `docker compose -p lavage-auto-dev up --build`.
+- Seul le port applicatif est expose sur l'hote par defaut. PostgreSQL et Redis restent dans le reseau Docker pour eviter les conflits avec des installations locales.
+- `docker compose down -v` supprime aussi les donnees PostgreSQL/Redis locales.
+- `BOOTSTRAP_AUTO_SEED=false docker compose up --build` demarre sans peupler la base.
+- `BOOTSTRAP_RESET_DEMO_DATA=true docker compose up --build bootstrap` force la reinitialisation des donnees demo.
+- Le port local Flask peut etre change avec `APP_PORT`, par exemple `APP_PORT=5050 docker compose up --build`.
+- Sous Windows PowerShell, utiliser plutot `$env:APP_PORT="5050"; docker compose up --build`, ou modifier `APP_PORT` dans `.env`.
+- Le `Dockerfile` lance Gunicorn par defaut pour la production; Docker Compose surcharge cette commande avec `python app.py` afin de garder un demarrage local simple.
+
+## 5) Installation locale manuelle
 
 ```bash
 python -m venv .venv
@@ -90,7 +132,7 @@ source .venv/bin/activate
 pip install -r dependences.txt
 ```
 
-## 5) Configuration
+## 6) Configuration
 
 Copier `.env.example` vers `.env`, puis adapter les valeurs locales:
 
@@ -105,8 +147,12 @@ Variables importantes:
 - `APP_ENV`: `development`, `test` ou `production`.
 - `TESTING`: active la configuration de test Flask.
 - `DEBUG`: doit rester `False` hors developpement.
+- `FLASK_RUN_HOST`, `FLASK_RUN_PORT`: interface et port utilises par `python app.py`.
+- `APP_PORT`: port hote publie par Docker Compose pour acceder a Flask.
+- `DATABASE_URL`: chaine PostgreSQL complete; si elle est definie, elle remplace les variables `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` et `DB_PORT`.
 - `CORS_ALLOWED_ORIGINS`: liste separee par des virgules; si vide, CORS n'est ouvert automatiquement qu'en developpement.
 - `REDIS_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`: connexions Redis.
+- `BOOTSTRAP_AUTO_SEED`, `BOOTSTRAP_APPLY_SCHEMA`, `BOOTSTRAP_RESET_DEMO_DATA`: comportement du bootstrap Docker.
 - `HEALTH_CHECK_CELERY_WORKER`: ajoute un ping worker Celery a `/health/readiness` quand `True`.
 - `RATE_LIMITING_ENABLED`, `RATE_LIMITING_BACKEND`, `AUTH_LOGIN_RATE_LIMIT_ATTEMPTS`, `AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS`: politique de limitation des tentatives de connexion.
 - `AUTH_REGISTER_RATE_LIMIT_ATTEMPTS`, `AUTH_REGISTER_RATE_LIMIT_WINDOW_SECONDS`: politique de limitation des inscriptions.
@@ -117,7 +163,7 @@ En environnement non-dev, `SECRET_KEY` et `JWT_SECRET_KEY` doivent etre definis 
 
 Pour une installation exposee, PostgreSQL et Redis doivent etre limites a un reseau prive ou a des regles pare-feu strictes. Utiliser des mots de passe forts, des sauvegardes verifiees, une rotation des secrets, et TLS quand le trafic sort de la machine ou du reseau prive.
 
-## 6) Initialiser la base de donnees
+## 7) Initialiser la base de donnees en local manuel
 
 1. Creer la base si elle n'existe pas:
 
@@ -145,7 +191,7 @@ La migration `002_renommer_fondations_en_francais.sql` est conservee comme jalon
 python -m bd.peuplement
 ```
 
-## 7) Lancer le projet
+## 8) Lancer le projet en local manuel
 
 Windows PowerShell recommande:
 
@@ -215,7 +261,7 @@ Controles de sante:
 
 Chaque reponse JSON inclut un `correlation_id`, aussi expose dans l'en-tete `X-Correlation-ID`.
 
-## 8) Comptes de test (apres peuplement)
+## 9) Comptes de test (apres peuplement)
 
 Mot de passe commun:
 - `TestPassword2026!`
@@ -224,7 +270,7 @@ Exemples:
 - Client: `client1.postman@example.com`
 - Prestataire: `prestataire1.postman@example.com`
 
-## 9) Endpoints API principaux
+## 10) Endpoints API principaux
 
 ### Auth
 - `POST /auth/register`
@@ -253,7 +299,7 @@ Exemples:
 - `GET|PUT|DELETE /reservations/{id}`
 - `GET /reservations/{id}/facture`
 
-## 10) Structure du projet
+## 11) Structure du projet
 
 ```text
 backend/
@@ -263,15 +309,59 @@ bd/
 frontend/
   route/ templates/ static/
 scripts/
-  run_flask.ps1 run_celery_worker.ps1 run_celery_beat.ps1
+  bootstrap.py run_flask.ps1 run_celery_worker.ps1 run_celery_beat.ps1
 app.py
+compose.yaml
+Dockerfile
 extensions.py
+render.yaml
 ```
 
-## 11) Notes
+## 12) Notes
 
 - Le projet est en cours d'evolution selon la roadmap locale de pilotage.
 - La roadmap historique mentionne MySQL, mais ce depot implemente actuellement PostgreSQL. Les scripts, migrations et exemples locaux suivent PostgreSQL.
 - Une execution locale complete necessite PostgreSQL actif et correctement configure.
 - Redis doit etre actif pour les workers Celery et le traitement Outbox asynchrone.
 - L'etape 1 est livree sur le perimetre fondations. Les P2 securite planifies restent obligatoires avant production exposee.
+
+## 13) Integration continue
+
+GitHub Actions execute automatiquement la qualite sur chaque `push` et `pull_request`.
+
+Controles CI:
+- Installation Python 3.11 avec `requirements-dev.txt`.
+- Analyse statique critique avec Ruff.
+- Compilation Python avec `compileall`.
+- Tests unitaires avec `pytest`.
+- Validation `docker compose config`.
+- Build Docker Compose.
+- Verification de la commande serveur production Gunicorn dans le conteneur.
+- Smoke test Compose complet sur PostgreSQL, Redis, Flask, Celery worker et Celery Beat avec verification `/health/readiness`.
+
+Pour rejouer les controles principaux avant un push sous Windows PowerShell:
+
+```powershell
+.\scripts\run_ci_checks.ps1
+```
+
+## 14) Deploiement Render
+
+Le fichier `render.yaml` sert de Blueprint Render. Il declare:
+- `lavage-auto-web`: service web Docker qui demarre avec Gunicorn et expose `/health`.
+- `lavage-auto-worker`: worker Celery pour traiter l'Outbox.
+- `lavage-auto-beat`: planificateur Celery Beat.
+- `lavage-auto-db`: base PostgreSQL geree.
+- `lavage-auto-redis`: instance Key Value Redis-compatible, limitee au reseau interne Render.
+
+Etapes recommandees pour rendre l'application testable par des recruteurs:
+
+1. Pousser la branche `master` sur GitHub et verifier que GitHub Actions passe.
+2. Dans Render, creer un nouveau Blueprint depuis ce depot.
+3. Selectionner `render.yaml`, laisser Render creer les services, puis verifier les couts avant validation: le web peut utiliser le plan gratuit, mais les workers et PostgreSQL peuvent necessiter un plan payant selon l'offre Render active.
+4. Attendre le premier deploiement. Le hook initial lance `python -m scripts.bootstrap` pour creer le schema et peupler les donnees demo si la base est vide.
+5. Ouvrir l'URL publique `https://lavage-auto-web.onrender.com` ou celle attribuee par Render.
+6. Tester `/health` puis `/health/readiness`.
+7. Ajouter l'URL publique dans le portfolio avec les comptes demo du README.
+
+Le deploiement continu sert a publier automatiquement une nouvelle version apres chaque changement valide. Ici, `autoDeployTrigger: checksPass` demande a Render de redeployer seulement quand les checks GitHub Actions de la branche liee passent. Le flux attendu est donc: push GitHub, CI, build Render, deploiement, verification de sante.

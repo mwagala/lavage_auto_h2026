@@ -1,0 +1,126 @@
+x-app-build: &app-build
+  build:
+    context: .
+
+x-app-environment: &app-environment
+  APP_ENV: development
+  TESTING: "False"
+  DEBUG: "True"
+  FLASK_DEBUG: "True"
+  FLASK_RUN_HOST: 0.0.0.0
+  FLASK_RUN_PORT: 5000
+  DB_HOST: postgres
+  DB_USER: ${POSTGRES_USER:-postgres}
+  DB_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+  DB_NAME: ${POSTGRES_DB:-lavage_auto}
+  DB_PORT: 5432
+  DB_CONNECT_TIMEOUT: 5
+  HEALTH_CHECK_TIMEOUT: 1
+  HEALTH_CHECK_CELERY_WORKER: "False"
+  SECRET_KEY: docker-dev-secret-key-minimum-32-characters
+  JWT_SECRET_KEY: docker-dev-jwt-secret-key-minimum-32-characters
+  JWT_ACCESS_TOKEN_EXPIRES_MINUTES: 120
+  CORS_ALLOWED_ORIGINS: http://127.0.0.1:5000,http://localhost:5000
+  SECURITY_HEADERS_ENABLED: "True"
+  RATE_LIMITING_ENABLED: "True"
+  RATE_LIMITING_BACKEND: redis
+  RATE_LIMITING_REDIS_TIMEOUT_SECONDS: 1
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+  OUTBOX_CONSUMER_INTERVAL_SECONDS: 60
+  OUTBOX_BATCH_SIZE: 10
+  OUTBOX_MAX_ATTEMPTS: 5
+  OUTBOX_RETRY_BACKOFF_SECONDS: 60
+  OUTBOX_MAX_RETRY_DELAY_SECONDS: 3600
+  OUTBOX_STALE_PROCESSING_SECONDS: 900
+  OUTBOX_STALE_RESET_LIMIT: 100
+  LOG_LEVEL: INFO
+  CELERY_TASK_ALWAYS_EAGER: "False"
+  BOOTSTRAP_AUTO_SEED: ${BOOTSTRAP_AUTO_SEED:-true}
+  BOOTSTRAP_APPLY_SCHEMA: ${BOOTSTRAP_APPLY_SCHEMA:-true}
+  BOOTSTRAP_RESET_DEMO_DATA: ${BOOTSTRAP_RESET_DEMO_DATA:-false}
+  BOOTSTRAP_TIMEOUT_SECONDS: ${BOOTSTRAP_TIMEOUT_SECONDS:-60}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-lavage_auto}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./bd/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  bootstrap:
+    <<: *app-build
+    command: ["python", "-m", "scripts.bootstrap"]
+    environment:
+      <<: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    <<: *app-build
+    command: ["python", "app.py"]
+    environment:
+      <<: *app-environment
+    ports:
+      - "${APP_PORT:-5000}:5000"
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=2)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    <<: *app-build
+    command: ["celery", "-A", "backend.celery.celery_app:celery_app", "worker", "-l", "INFO", "--pool=solo"]
+    environment:
+      <<: *app-environment
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  beat:
+    <<: *app-build
+    command: ["celery", "-A", "backend.celery.celery_app:celery_app", "beat", "-l", "INFO", "--schedule", "/tmp/celerybeat-schedule"]
+    environment:
+      <<: *app-environment
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:

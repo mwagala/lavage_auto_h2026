@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta
 
 from flask import Flask
@@ -81,4 +82,8 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(debug=Config.DEBUG)
+    app.run(
+        host=os.getenv("FLASK_RUN_HOST", "127.0.0.1"),
+        port=int(os.getenv("FLASK_RUN_PORT", os.getenv("PORT", "5000"))),
+        debug=Config.DEBUG,
+    )

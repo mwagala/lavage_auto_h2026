@@ -12,6 +12,17 @@ def get_connection():
     """
     Cree une connexion PostgreSQL standard pour le projet.
     """
+    database_url = os.getenv("DATABASE_URL")
+    connect_timeout = int(os.getenv("DB_CONNECT_TIMEOUT", 5))
+
+    if database_url:
+        return psycopg.connect(
+            database_url,
+            row_factory=dict_row,
+            autocommit=False,
+            connect_timeout=connect_timeout,
+        )
+
     return psycopg.connect(
         host=os.getenv("DB_HOST"),
         port=int(os.getenv("DB_PORT", 5432)),
@@ -20,7 +31,7 @@ def get_connection():
         dbname=os.getenv("DB_NAME"),
         row_factory=dict_row,
         autocommit=False,
-        connect_timeout=int(os.getenv("DB_CONNECT_TIMEOUT", 5)),
+        connect_timeout=connect_timeout,
     )
 
 

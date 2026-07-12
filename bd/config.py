@@ -93,6 +93,7 @@ class Config:
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
     DB_NAME = os.getenv("DB_NAME", "lavage_auto")
     DB_PORT = int(os.getenv("DB_PORT", 5432))
+    DATABASE_URL = os.getenv("DATABASE_URL", "")
 
     SECRET_KEY = _get_secret(
         "SECRET_KEY",

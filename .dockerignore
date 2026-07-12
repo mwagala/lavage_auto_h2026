@@ -1,0 +1,12 @@
+.git/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+.env.*
+!.env.example
+docs/
+outputs/
+celerybeat-schedule
+celerybeat-schedule.*

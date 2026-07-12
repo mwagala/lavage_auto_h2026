@@ -32,10 +32,11 @@ def _check_database():
 
 def _check_redis_url(url):
     try:
+        timeout = max(1, float(Config.HEALTH_CHECK_TIMEOUT))
         client = Redis.from_url(
             url,
-            socket_connect_timeout=Config.HEALTH_CHECK_TIMEOUT,
-            socket_timeout=Config.HEALTH_CHECK_TIMEOUT,
+            socket_connect_timeout=timeout,
+            socket_timeout=timeout,
             decode_responses=True,
         )
         client.ping()
@@ -63,25 +64,25 @@ def liveness():
 
 @health_bp.get("/health/readiness")
 def readiness():
-    checkers = {
-        "database": _check_database,
-        "redis": lambda: _check_redis_url(Config.REDIS_URL),
-        "celery_broker": lambda: _check_redis_url(Config.CELERY_BROKER_URL),
-        "celery_result_backend": lambda: _check_redis_url(Config.CELERY_RESULT_BACKEND),
+    checks = {
+        "database": _check_database(),
     }
 
-    if Config.HEALTH_CHECK_CELERY_WORKER:
-        checkers["celery_worker"] = _check_celery_worker
+    redis_urls_by_check = {
+        "redis": Config.REDIS_URL,
+        "celery_broker": Config.CELERY_BROKER_URL,
+        "celery_result_backend": Config.CELERY_RESULT_BACKEND,
+    }
+    redis_results_by_url = {}
 
-    with ThreadPoolExecutor(max_workers=max(1, len(checkers))) as executor:
-        futures = {
-            name: executor.submit(checker)
-            for name, checker in checkers.items()
-        }
-        checks = {
-            name: future.result()
-            for name, future in futures.items()
-        }
+    for check_name, redis_url in redis_urls_by_check.items():
+        if redis_url not in redis_results_by_url:
+            redis_results_by_url[redis_url] = _check_redis_url(redis_url)
+        checks[check_name] = redis_results_by_url[redis_url]
+
+    if Config.HEALTH_CHECK_CELERY_WORKER:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            checks["celery_worker"] = executor.submit(_check_celery_worker).result()
 
     ready = all(check["ok"] for check in checks.values())
     payload = {

@@ -94,6 +94,30 @@ def test_health_readiness_success_with_mocked_checks(client, monkeypatch):
     }
 
 
+def test_health_readiness_reuses_same_redis_url_result(client, monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        health_routes,
+        "_check_database",
+        lambda: health_routes._ok({"result": 1}),
+    )
+    monkeypatch.setattr(health_routes.Config, "REDIS_URL", "redis://render-internal:6379")
+    monkeypatch.setattr(health_routes.Config, "CELERY_BROKER_URL", "redis://render-internal:6379")
+    monkeypatch.setattr(health_routes.Config, "CELERY_RESULT_BACKEND", "redis://render-internal:6379")
+
+    def fake_check_redis_url(url):
+        calls.append(url)
+        return health_routes._ok({"url": url})
+
+    monkeypatch.setattr(health_routes, "_check_redis_url", fake_check_redis_url)
+
+    response = client.get("/health/readiness")
+
+    assert response.status_code == 200
+    assert calls == ["redis://render-internal:6379"]
+
+
 def test_health_readiness_degraded_with_mocked_failure(client, monkeypatch):
     monkeypatch.setattr(
         health_routes,

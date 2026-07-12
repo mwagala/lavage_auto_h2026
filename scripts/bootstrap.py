@@ -9,6 +9,7 @@ import redis
 from bd import peuplement
 from bd.config import Config
 from bd.database import get_connection
+from bd.schema_checks import format_missing_columns, missing_public_catalog_columns
 
 
 def _get_bool_env(name: str, default: bool = False) -> bool:
@@ -55,12 +56,10 @@ def _check_redis() -> None:
     client.ping()
 
 
-def _schema_exists() -> bool:
+def _missing_schema_columns() -> list[tuple[str, str]]:
     with get_connection() as connection:
-        row = connection.execute(
-            "SELECT to_regclass('public.clients') AS table_name"
-        ).fetchone()
-    return bool(row and row["table_name"])
+        with connection.cursor() as cursor:
+            return missing_public_catalog_columns(cursor)
 
 
 def _apply_schema() -> None:
@@ -114,12 +113,19 @@ def main() -> None:
     _wait_for("PostgreSQL", _check_postgres, timeout_seconds)
     _wait_for("Redis", _check_redis, timeout_seconds)
 
-    if not _schema_exists():
+    missing_columns = _missing_schema_columns()
+    if missing_columns:
         if not apply_schema:
-            raise RuntimeError("Schema PostgreSQL absent et BOOTSTRAP_APPLY_SCHEMA=false.")
+            missing = format_missing_columns(missing_columns)
+            raise RuntimeError(
+                "Schema PostgreSQL absent ou incomplet "
+                f"({missing}) et BOOTSTRAP_APPLY_SCHEMA=false."
+            )
+        missing = format_missing_columns(missing_columns)
+        print(f"Schema PostgreSQL absent ou incomplet ({missing}).")
         _apply_schema()
     else:
-        print("Schema PostgreSQL deja present.")
+        print("Schema PostgreSQL deja present et compatible.")
 
     _seed_if_needed()
     print("Bootstrap termine.")

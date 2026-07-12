@@ -2,6 +2,7 @@ from flask_jwt_extended import create_access_token
 
 from backend.Commun.middleware import CORRELATION_HEADER
 from backend.Health import routes as health_routes
+from bd.schema_checks import REQUIRED_PUBLIC_DATABASE_COLUMNS
 
 
 def test_cors_does_not_allow_unconfigured_origin(monkeypatch):
@@ -39,6 +40,9 @@ def test_health_liveness_returns_standard_payload(client):
 
 def test_health_database_check_uses_shared_connection(monkeypatch):
     class FakeCursor:
+        def __init__(self):
+            self.query = ""
+
         def __enter__(self):
             return self
 
@@ -46,10 +50,17 @@ def test_health_database_check_uses_shared_connection(monkeypatch):
             return False
 
         def execute(self, query):
-            assert query == "SELECT 1"
+            self.query = query
 
         def fetchone(self):
-            return [1]
+            return {"result": 1}
+
+        def fetchall(self):
+            assert "information_schema.columns" in self.query
+            return [
+                {"table_name": table, "column_name": column}
+                for table, column in REQUIRED_PUBLIC_DATABASE_COLUMNS
+            ]
 
     class FakeConnection:
         def __enter__(self):
@@ -66,6 +77,45 @@ def test_health_database_check_uses_shared_connection(monkeypatch):
     result = health_routes._check_database()
 
     assert result == {"ok": True, "details": {"result": 1}}
+
+
+def test_health_database_check_reports_missing_schema_columns(monkeypatch):
+    class FakeCursor:
+        def __init__(self):
+            self.query = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, query):
+            self.query = query
+
+        def fetchone(self):
+            return {"result": 1}
+
+        def fetchall(self):
+            assert "information_schema.columns" in self.query
+            return [{"table_name": "prestataires", "column_name": "id"}]
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr(health_routes, "get_connection", lambda: FakeConnection())
+
+    result = health_routes._check_database()
+
+    assert result["ok"] is False
+    assert "Schema PostgreSQL incomplet" in result["error"]
 
 
 def test_health_readiness_success_with_mocked_checks(client, monkeypatch):

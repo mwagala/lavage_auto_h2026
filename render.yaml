@@ -14,9 +14,9 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     dockerCommand: ./scripts/render_web.sh
+    preDeployCommand: python -m scripts.bootstrap
     healthCheckPath: /health
     autoDeployTrigger: checksPass
-    initialDeployHook: python -m scripts.bootstrap
     envVars:
       - fromGroup: lavage-auto-production-common
       - key: DATABASE_URL

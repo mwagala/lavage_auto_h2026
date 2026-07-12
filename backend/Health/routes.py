@@ -5,6 +5,7 @@ from redis import Redis
 
 from bd.config import Config
 from bd.database import get_connection
+from bd.schema_checks import format_missing_columns, missing_public_catalog_columns
 from backend.Commun.reponses import error_response, success_response
 
 
@@ -23,9 +24,16 @@ def _check_database():
     try:
         with get_connection() as connection:
             with connection.cursor() as cursor:
-                cursor.execute("SELECT 1")
+                cursor.execute("SELECT 1 AS result")
                 row = cursor.fetchone()
-        return _ok({"result": row[0] if row else None})
+
+                missing_columns = missing_public_catalog_columns(cursor)
+
+        if missing_columns:
+            missing = format_missing_columns(missing_columns)
+            return _ko(f"Schema PostgreSQL incomplet: {missing}")
+
+        return _ok({"result": row["result"] if row else None})
     except Exception as exc:
         return _ko(exc)
 

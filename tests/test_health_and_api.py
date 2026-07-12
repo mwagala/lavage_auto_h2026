@@ -37,6 +37,37 @@ def test_health_liveness_returns_standard_payload(client):
     assert payload["correlation_id"] == "corr-health"
 
 
+def test_health_database_check_uses_shared_connection(monkeypatch):
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, query):
+            assert query == "SELECT 1"
+
+        def fetchone(self):
+            return [1]
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr(health_routes, "get_connection", lambda: FakeConnection())
+
+    result = health_routes._check_database()
+
+    assert result == {"ok": True, "details": {"result": 1}}
+
+
 def test_health_readiness_success_with_mocked_checks(client, monkeypatch):
     monkeypatch.setattr(
         health_routes,

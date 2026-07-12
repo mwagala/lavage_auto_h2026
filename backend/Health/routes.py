@@ -1,10 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor
 
 from flask import Blueprint
-import psycopg
 from redis import Redis
 
 from bd.config import Config
+from bd.database import get_connection
 from backend.Commun.reponses import error_response, success_response
 
 
@@ -21,15 +21,7 @@ def _ko(error):
 
 def _check_database():
     try:
-        health_host = "127.0.0.1" if Config.DB_HOST == "localhost" else Config.DB_HOST
-        with psycopg.connect(
-            host=health_host,
-            port=Config.DB_PORT,
-            user=Config.DB_USER,
-            password=Config.DB_PASSWORD,
-            dbname=Config.DB_NAME,
-            connect_timeout=max(1, int(Config.HEALTH_CHECK_TIMEOUT)),
-        ) as connection:
+        with get_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
                 row = cursor.fetchone()

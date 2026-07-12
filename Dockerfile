@@ -13,10 +13,11 @@ RUN python -m pip install --upgrade pip \
     && python -m pip install -r dependences.txt
 
 COPY . .
-RUN chown -R appuser:appuser /app
+RUN chmod +x scripts/render_web.sh scripts/render_worker.sh scripts/render_beat.sh \
+    && chown -R appuser:appuser /app
 
 USER appuser
 
 EXPOSE 5000 10000
 
-CMD ["sh", "-c", "gunicorn -b 0.0.0.0:${PORT:-5000} app:app"]
+CMD ["./scripts/render_web.sh"]

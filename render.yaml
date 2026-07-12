@@ -13,7 +13,7 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    dockerCommand: sh -c "gunicorn -b 0.0.0.0:${PORT:-10000} app:app"
+    dockerCommand: ./scripts/render_web.sh
     healthCheckPath: /health
     autoDeployTrigger: checksPass
     initialDeployHook: python -m scripts.bootstrap
@@ -46,7 +46,7 @@ services:
     plan: starter
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    dockerCommand: celery -A backend.celery.celery_app:celery_app worker -l INFO --pool=solo
+    dockerCommand: ./scripts/render_worker.sh
     autoDeployTrigger: checksPass
     envVars:
       - fromGroup: lavage-auto-production-common
@@ -77,7 +77,7 @@ services:
     plan: starter
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    dockerCommand: celery -A backend.celery.celery_app:celery_app beat -l INFO --schedule /tmp/celerybeat-schedule
+    dockerCommand: ./scripts/render_beat.sh
     autoDeployTrigger: checksPass
     envVars:
       - fromGroup: lavage-auto-production-common

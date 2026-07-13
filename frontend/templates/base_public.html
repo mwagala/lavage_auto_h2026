@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>{% block title %}LavageAuto{% endblock %}</title>
+    <title>{% block title %}TEHISSON{% endblock %}</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,9 +20,18 @@
 <div id="app" class="site-shell">
     <header class="site-header">
         <div class="container header-inner">
-            <a href="{{ url_for('public.home') }}" class="brand">
-                <span class="brand-mark">L</span>
-                <span class="brand-text">LavageAuto</span>
+            <a href="{{ url_for('public.home') }}" class="brand" aria-label="TEHISSON - Accueil">
+                <img
+                        src="{{ url_for('static', filename='images/tehisson-logo.png') }}"
+                        alt=""
+                        class="brand-logo"
+                        width="52"
+                        height="52"
+                >
+                <span class="brand-copy">
+                    <span class="brand-text">TEHISSON</span>
+                    <span class="brand-tagline">Services professionnels aux particuliers</span>
+                </span>
             </a>
 
             <nav class="main-nav">
@@ -92,9 +101,21 @@
     <footer class="site-footer">
         <div class="container footer-inner">
             <div>
-                <h3 class="footer-title">LavageAuto</h3>
+                <div class="footer-brand">
+                    <img
+                            src="{{ url_for('static', filename='images/tehisson-logo.png') }}"
+                            alt=""
+                            class="footer-logo"
+                            width="48"
+                            height="48"
+                    >
+                    <div>
+                        <h3 class="footer-title">TEHISSON</h3>
+                        <p class="footer-kicker">SERVICES PROFESSIONNELS AUX PARTICULIERS</p>
+                    </div>
+                </div>
                 <p class="footer-text">
-                    Réservez un service de lavage automobile à domicile simplement, rapidement et en toute confiance.
+                    Réservez un service automobile à domicile simplement, rapidement et en toute confiance.
                 </p>
             </div>
 
@@ -110,7 +131,7 @@
 
             <div>
                 <h4 class="footer-subtitle">Contact</h4>
-                <p class="footer-text">support@lavageauto.com</p>
+                <p class="footer-text">support@tehisson.com</p>
                 <p class="footer-text">Québec, Canada</p>
             </div>
         </div>

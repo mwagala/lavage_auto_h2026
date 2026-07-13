@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>{% block title %}LavageAuto{% endblock %}</title>
+    <title>{% block title %}TEHISSON{% endblock %}</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,9 +19,18 @@
 <div id="app" class="site-shell" v-cloak>
     <header class="auth-header-minimal">
         <div class="container auth-header-inner">
-            <a href="{{ url_for('public.home') }}" class="brand">
-                <span class="brand-mark">L</span>
-                <span class="brand-text">LavageAuto</span>
+            <a href="{{ url_for('public.home') }}" class="brand" aria-label="TEHISSON - Accueil">
+                <img
+                    src="{{ url_for('static', filename='images/tehisson-logo.png') }}"
+                    alt=""
+                    class="brand-logo"
+                    width="52"
+                    height="52"
+                >
+                <span class="brand-copy">
+                    <span class="brand-text">TEHISSON</span>
+                    <span class="brand-tagline">Services professionnels aux particuliers</span>
+                </span>
             </a>
 
             <div class="auth-header-actions">

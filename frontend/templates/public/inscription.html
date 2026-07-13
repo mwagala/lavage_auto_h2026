@@ -1,6 +1,6 @@
 {% extends "base_auth.html" %}
 
-{% block title %}Inscription | LavageAuto{% endblock %}
+{% block title %}Inscription | TEHISSON{% endblock %}
 
 {% block content %}
 <section class="auth-section">
@@ -9,9 +9,9 @@
       <div class="auth-card auth-card-register">
         <div class="auth-card-inner auth-card-inner-register">
           <div class="auth-header">
-            <h1 class="auth-title">Créer un compte</h1>
+            <h1 class="auth-title">Créer un compte TEHISSON</h1>
             <p class="auth-subtitle">
-              Inscrivez-vous pour réserver des services ou proposer vos prestations sur LavageAuto.
+              Inscrivez-vous pour réserver des services ou proposer vos prestations avec TEHISSON.
             </p>
           </div>
 
@@ -302,11 +302,18 @@
           "azertyazerty",
           "123456789",
           "1234567890",
+          "tehisson",
+          "tehisson123",
+          "tehissontehisson",
           "lavageauto",
           "lavageauto123",
           "lavageautolavageauto"
         ];
-        const weakPasswordRoots = ["password", "motdepasse", "admin", "qwerty", "azerty", "lavageauto"];
+        const weakPasswordRoots = ["password", "motdepasse", "admin", "qwerty", "azerty", "tehisson", "lavageauto"];
+
+        if (!normalizedPassword || weakPasswords.includes(normalizedPassword) || weakPasswordRoots.some(root => new RegExp(`^${root}\\d*$`).test(normalizedPassword))) {
+          return "Ce mot de passe est trop facile à deviner.";
+        }
 
         if (password.length < 15) {
           return "Le mot de passe doit contenir au moins 15 caractères.";
@@ -318,10 +325,6 @@
 
         if (/[\u0000-\u001F\u007F]/.test(password)) {
           return "Le mot de passe ne doit pas contenir de caractères de contrôle.";
-        }
-
-        if (!normalizedPassword || weakPasswords.includes(normalizedPassword) || weakPasswordRoots.some(root => new RegExp(`^${root}\\d*$`).test(normalizedPassword))) {
-          return "Ce mot de passe est trop facile à deviner.";
         }
 
         if (!this.form.role) {

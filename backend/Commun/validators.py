@@ -25,8 +25,19 @@ WEAK_PASSWORDS = {
     "lavageauto",
     "lavageauto123",
     "lavageautolavageauto",
+    "tehisson",
+    "tehisson123",
+    "tehissontehisson",
 }
-WEAK_PASSWORD_ROOTS = {"password", "motdepasse", "admin", "qwerty", "azerty", "lavageauto"}
+WEAK_PASSWORD_ROOTS = {
+    "password",
+    "motdepasse",
+    "admin",
+    "qwerty",
+    "azerty",
+    "lavageauto",
+    "tehisson",
+}
 
 
 def normalize_nas(value):
@@ -59,6 +70,13 @@ def validate_password(value):
     if not value.strip():
         return None, "Le mot de passe est obligatoire."
 
+    normalized = re.sub(r"[\s_\-.'\"`]+", "", value).lower()
+    if not normalized or normalized in WEAK_PASSWORDS:
+        return None, "Ce mot de passe est trop facile a deviner."
+
+    if any(re.fullmatch(rf"{root}\d*", normalized) for root in WEAK_PASSWORD_ROOTS):
+        return None, "Ce mot de passe est trop facile a deviner."
+
     if len(value) < PASSWORD_MIN_LENGTH:
         return None, "Le mot de passe doit contenir au moins 15 caracteres."
 
@@ -67,12 +85,5 @@ def validate_password(value):
 
     if any(unicodedata.category(character)[0] == "C" for character in value):
         return None, "Le mot de passe ne doit pas contenir de caracteres de controle."
-
-    normalized = re.sub(r"[\s_\-.'\"`]+", "", value).lower()
-    if not normalized or normalized in WEAK_PASSWORDS:
-        return None, "Ce mot de passe est trop facile a deviner."
-
-    if any(re.fullmatch(rf"{root}\d*", normalized) for root in WEAK_PASSWORD_ROOTS):
-        return None, "Ce mot de passe est trop facile a deviner."
 
     return value, None

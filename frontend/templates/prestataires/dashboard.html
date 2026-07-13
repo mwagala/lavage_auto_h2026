@@ -1,6 +1,6 @@
 {% extends "base_auth.html" %}
 
-{% block title %}Dashboard prestataire{% endblock %}
+{% block title %}Tableau de bord prestataire | TEHISSON{% endblock %}
 
 {% block extra_css %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/client.css') }}">
@@ -1054,13 +1054,16 @@
                         "1234567890",
                         "lavageauto",
                         "lavageauto123",
-                        "lavageautolavageauto"
+                        "lavageautolavageauto",
+                        "tehisson",
+                        "tehisson123",
+                        "tehissontehisson"
                     ];
-                    const weakPasswordRoots = ["password", "motdepasse", "admin", "qwerty", "azerty", "lavageauto"];
+                    const weakPasswordRoots = ["password", "motdepasse", "admin", "qwerty", "azerty", "tehisson", "lavageauto"];
+                    if (!normalizedPassword || weakPasswords.includes(normalizedPassword) || weakPasswordRoots.some(root => new RegExp(`^${root}\\d*$`).test(normalizedPassword))) return "Ce mot de passe est trop facile à deviner.";
                     if (password.length < 15) return "Le nouveau mot de passe doit contenir au moins 15 caractères.";
                     if (password.length > 128) return "Le nouveau mot de passe ne doit pas dépasser 128 caractères.";
                     if (/[\u0000-\u001F\u007F]/.test(password)) return "Le nouveau mot de passe ne doit pas contenir de caractères de contrôle.";
-                    if (!normalizedPassword || weakPasswords.includes(normalizedPassword) || weakPasswordRoots.some(root => new RegExp(`^${root}\\d*$`).test(normalizedPassword))) return "Ce mot de passe est trop facile à deviner.";
                     if (this.passwordForm.nouveau_mot_de_passe !== this.passwordForm.confirmation_mot_de_passe) {
                         return "La confirmation du nouveau mot de passe ne correspond pas.";
                     }

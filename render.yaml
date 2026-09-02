@@ -168,3 +168,5 @@ envVarGroups:
         value: "False"
       - key: BOOTSTRAP_TIMEOUT_SECONDS
         value: "90"
+      - key: RENDER_WEB_BOOTSTRAP_REQUIRED
+        value: "False"

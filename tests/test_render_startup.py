@@ -6,6 +6,9 @@ def test_render_web_starts_gunicorn_when_bootstrap_is_not_required():
 
     assert "python -m scripts.bootstrap" in script
     assert "RENDER_WEB_BOOTSTRAP_REQUIRED" in script
+    assert "RENDER_WEB_BOOTSTRAP_TIMEOUT_SECONDS" in script
     assert "True|true|1|yes|on" in script
-    assert "Bootstrap non concluant; demarrage web en mode degrade." in script
+    assert ") &" in script
+    assert "Demarrage web sans attendre la fin du bootstrap." in script
+    assert "Bootstrap non concluant; service web maintenu en mode degrade." in script
     assert "exec gunicorn" in script

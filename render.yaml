@@ -170,3 +170,5 @@ envVarGroups:
         value: "90"
       - key: RENDER_WEB_BOOTSTRAP_REQUIRED
         value: "False"
+      - key: RENDER_WEB_BOOTSTRAP_TIMEOUT_SECONDS
+        value: "15"
